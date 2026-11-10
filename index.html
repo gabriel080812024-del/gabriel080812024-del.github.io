@@ -1,0 +1,68 @@
+<!doctype html>
+<html lang="es">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<title>Mi Contabilidad</title>
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-title" content="Contabilidad">
+<meta name="apple-mobile-web-app-status-bar-style" content="default">
+<meta name="theme-color" content="#0b5d56">
+<link rel="manifest" href="/_ipad/manifest.webmanifest">
+<link rel="apple-touch-icon" href="/_ipad/icono-180.png">
+<style>
+  :root { --verde: #0b5d56; --texto: #16302b; --gris: #5b766f; --fondo: #f4f7f6; }
+  * { box-sizing: border-box; }
+  html, body { margin: 0; height: 100%; background: #fff; font: 16px/1.45 -apple-system, "Helvetica Neue", sans-serif; color: var(--texto); }
+  #marco { position: fixed; inset: 0; width: 100%; height: 100%; border: 0; display: none; background: #fff; }
+  #arranque { position: fixed; inset: 0; display: flex; flex-direction: column; align-items: center; justify-content: center;
+    padding: 24px; background: var(--fondo); text-align: center; }
+  .logo { width: 84px; height: 84px; border-radius: 20px; background: #e8890c; color: #fff; font: 700 50px/84px sans-serif; margin-bottom: 18px; }
+  h1 { margin: 0 0 6px; color: var(--verde); font-size: 26px; }
+  #paso { color: var(--gris); min-height: 1.5em; }
+  .barra { width: min(320px, 80vw); height: 6px; border-radius: 3px; background: #dbe7e4; margin: 18px 0 6px; overflow: hidden; }
+  .barra i { display: block; height: 100%; width: 0; background: var(--verde); transition: width .4s; }
+  #error { display: none; max-width: 520px; background: #fdecea; border-left: 5px solid #c62828; padding: 12px 16px; border-radius: 0 10px 10px 0; text-align: left; margin-top: 16px; }
+  #instalar { display: none; max-width: 520px; background: #fff4e5; border-left: 5px solid #e8890c; padding: 12px 16px; border-radius: 0 10px 10px 0; text-align: left; margin-top: 20px; }
+  button, .btn { font: 600 16px -apple-system, sans-serif; border: 0; border-radius: 12px; padding: 12px 18px; background: var(--verde); color: #fff; cursor: pointer; text-decoration: none; display: inline-block; }
+  button.sec { background: #e6efed; color: var(--verde); }
+  #archivo { position: fixed; inset: 0; background: rgba(10, 30, 26, .45); display: none; align-items: center; justify-content: center; padding: 20px; z-index: 5; }
+  #archivo .tarjeta { background: #fff; border-radius: 18px; padding: 22px; max-width: 440px; width: 100%; box-shadow: 0 20px 60px rgba(0,0,0,.25); }
+  #archivo h2 { margin: 0 0 4px; font-size: 19px; color: var(--verde); }
+  #archivo .nombre { word-break: break-all; color: var(--gris); font-size: 14px; margin-bottom: 14px; }
+  #archivo .fila { display: flex; gap: 10px; flex-wrap: wrap; }
+  #archivo p { font-size: 14px; color: var(--gris); }
+  @media (prefers-color-scheme: dark) {
+    :root { --texto: #e6efed; --gris: #9fb5af; --fondo: #0f1a18; }
+    #archivo .tarjeta { background: #17231f; } button.sec { background: #22322e; color: #cfe7e1; }
+  }
+</style>
+</head>
+<body>
+<div id="arranque">
+  <div class="logo">Σ</div>
+  <h1>Mi Contabilidad</h1>
+  <div id="paso">Abriendo…</div>
+  <div class="barra"><i id="progreso"></i></div>
+  <small id="detalle" style="color:var(--gris)"></small>
+  <div id="error"></div>
+  <div id="instalar"><b>Para usarla sin internet:</b> toca el botón <b>Compartir</b> (el cuadrado con la flecha, arriba)
+    → <b>Añadir a pantalla de inicio</b> → <b>Añadir</b>. Después ábrela siempre desde ese icono.</div>
+</div>
+<iframe id="marco" title="Mi Contabilidad"></iframe>
+<div id="archivo" role="dialog" aria-modal="true">
+  <div class="tarjeta">
+    <h2 id="archivo-titulo">Archivo listo</h2>
+    <div class="nombre" id="archivo-nombre"></div>
+    <div class="fila">
+      <button id="archivo-compartir">Compartir o guardar…</button>
+      <button class="sec" id="archivo-cerrar">Cerrar</button>
+    </div>
+    <p id="archivo-ayuda">Elige <b>AirDrop</b> para mandarlo a la Mac o al iPhone, <b>WhatsApp</b>, o <b>Guardar en Archivos</b>.</p>
+  </div>
+</div>
+<script src="/_ipad/pyodide/pyodide.js"></script>
+<script src="/_ipad/arranque.js"></script>
+</body>
+</html>
