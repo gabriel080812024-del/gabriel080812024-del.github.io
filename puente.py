@@ -51,7 +51,7 @@ def guardar():
 
 
 def vigilar():
-    """Cada medio minuto: 15 minutos sin uso cierra la sesión y cifra; si no, guarda cada 5 minutos.
+    """Cada medio minuto: 1 hora sin uso cierra la sesión y cifra; si no, guarda cada 5 minutos.
     Devuelve True si hay que guardar en el iPad."""
     if not boveda.abierta():
         return False
