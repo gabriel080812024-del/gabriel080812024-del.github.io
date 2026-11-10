@@ -150,6 +150,39 @@
     paso("Listo");
     const marco = $("marco");
     marco.src = "/";
+    // Formularios con archivo (restaurar una copia): Safari no pasa el archivo por el intermediario,
+    // así que se le entregan directo al programa desde aquí.
+    async function enviarConArchivo(f, d) {
+      const v = d.defaultView;
+      const fd = new v.FormData(f);
+      const quien = d.activeElement;
+      if (quien && quien.name && f.contains(quien)) fd.append(quien.name, quien.value || "");
+      const empaque = new v.Response(fd);
+      const cuerpo = new Uint8Array(await empaque.arrayBuffer());
+      const destino = new URL(f.getAttribute("action") || d.location.href, d.location.href);
+      const r = await enCola(() => atenderPedido({ metodo: "POST", ruta: destino.pathname + destino.search,
+        cuerpo, contenido: empaque.headers.get("Content-Type") }));
+      const loc = (r.cabeceras.find(([k]) => k.toLowerCase() === "location") || [])[1];
+      if (r.estado >= 300 && r.estado < 400 && loc) { marco.contentWindow.location.href = new URL(loc, d.location.href).href; return; }
+      if (r.estado === 204 || !r.contenido) return;
+      const html = new TextDecoder().decode(r.contenido);
+      const doc = marco.contentDocument;
+      doc.open(); doc.write(html); doc.close();
+      try { marco.contentWindow.history.replaceState(null, "", destino.pathname + destino.search); } catch (e) {}
+      engancharArchivos();
+    }
+    function engancharArchivos() {
+      const d = marco.contentDocument;
+      if (!d || d.__conArchivo) return;
+      d.__conArchivo = true;
+      d.addEventListener("submit", (ev) => {
+        const f = ev.target;
+        if (ev.defaultPrevented || !f || f.tagName !== "FORM" || !f.querySelector('input[type="file"]')) return;
+        ev.preventDefault();
+        enviarConArchivo(f, d).catch((e) => { console.error(e); alert("No se pudo enviar el archivo. Inténtalo otra vez."); });
+      });
+    }
+    marco.addEventListener("load", engancharArchivos);
     marco.addEventListener("load", () => {
       $("arranque").style.display = "none";
       marco.style.display = "block";
