@@ -42,4 +42,5 @@ for f in ("index.html", "_ipad/arranque.js"):
 version = h.hexdigest()[:10]
 sw = AQUI / "sw.js"
 sw.write_text(re.sub(r'const VERSION = "[^"]*"', f'const VERSION = "{version}"', sw.read_text()))
+(AQUI / "_ipad" / "version.js").write_text(f'window.VERSION_APP = "{version}";\n')
 print(f"programa.zip: {len(datos) / 1e6:.1f} MB · versión {version}")

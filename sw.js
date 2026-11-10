@@ -2,10 +2,10 @@
    - Guarda la app en el iPad para que funcione sin internet.
    - Cada pantalla del programa (/, /caja, /registrar/...) se la pide a la página principal,
      que tiene el programa corriendo dentro (Python en el navegador). Nada sale del iPad. */
-const VERSION = "5fad4ce073";
+const VERSION = "d4d256ef31";
 const CACHE = "mc-ipad-" + VERSION;
 const PROPIOS = [
-  "/", "/_ipad/arranque.js", "/_ipad/programa.zip", "/_ipad/manifest.webmanifest",
+  "/", "/_ipad/arranque.js", "/_ipad/version.js", "/_ipad/programa.zip", "/_ipad/manifest.webmanifest",
   "/_ipad/icono-180.png", "/_ipad/icono-192.png", "/_ipad/icono-512.png",
   "/_ipad/pyodide/pyodide.js", "/_ipad/pyodide/pyodide.asm.js", "/_ipad/pyodide/pyodide.asm.wasm",
   "/_ipad/pyodide/python_stdlib.zip", "/_ipad/pyodide/pyodide-lock.json",

@@ -20,6 +20,7 @@
     $("error").innerHTML = texto;
     $("paso").textContent = "No se pudo abrir";
   }
+  try { $("version").textContent = "versión " + (window.VERSION_APP || "?"); } catch (e) {}
   const independiente = window.navigator.standalone === true || matchMedia("(display-mode: standalone)").matches;
   if (!independiente && /iPad|iPhone|Macintosh/.test(navigator.userAgent) && "ontouchend" in document) {
     $("instalar").style.display = "block";
@@ -110,7 +111,7 @@
       return fallo("Este navegador no sirve para la app. Abre esta página en <b>Safari</b> (iPad con iPadOS 16.4 o más nuevo).");
     }
     paso("Preparando la app…");
-    await navigator.serviceWorker.register("/sw.js", { scope: "/" });
+    const registro = await navigator.serviceWorker.register("/sw.js", { scope: "/", updateViaCache: "none" });
     await navigator.serviceWorker.ready;
     if (!navigator.serviceWorker.controller) {  // la primera vez: recargar para que el intermediario tome el control
       await new Promise((ok) => { navigator.serviceWorker.addEventListener("controllerchange", ok, { once: true }); setTimeout(ok, 3000); });
@@ -126,6 +127,13 @@
       if (!libre) return fallo("La app ya está abierta en otra ventana o pestaña. Usa esa, o ciérrala y vuelve a abrir esta.");
     }
     if (navigator.storage && navigator.storage.persist) navigator.storage.persist().catch(() => {});
+    // versión nueva publicada: se instala sola; si nadie está dentro, se recarga para usarla
+    navigator.serviceWorker.addEventListener("controllerchange", () => {
+      let ruta = "/";
+      try { ruta = $("marco").contentWindow.location.pathname; } catch (e) {}
+      if (!atender || /^\/(entrar|crear-usuario|restaurar-copia|verificar|recuperar)/.test(ruta)) location.reload();
+    });
+    registro.update().catch(() => {});
 
     paso("Cargando el motor…", "La primera vez tarda un poco más");
     py = await loadPyodide({ indexURL: "/_ipad/pyodide/" });
@@ -152,16 +160,40 @@
     marco.src = "/";
     // Formularios con archivo (restaurar una copia): Safari no pasa el archivo por el intermediario,
     // así que se le entregan directo al programa desde aquí.
-    async function enviarConArchivo(f, d) {
-      const v = d.defaultView;
-      const fd = new v.FormData(f);
+    async function leerArchivo(file) {
+      if (file.arrayBuffer) return new Uint8Array(await file.arrayBuffer());
+      return new Uint8Array(await new Promise((ok, mal) => {
+        const r = new FileReader(); r.onload = () => ok(r.result); r.onerror = () => mal(r.error); r.readAsArrayBuffer(file);
+      }));
+    }
+    async function empaquetar(f, d) {  // arma el envío a mano (Safari no empaqueta bien archivos)
+      const borde = "----MiContabilidad" + Math.random().toString(16).slice(2);
+      const enc = new TextEncoder(), partes = [];
       const quien = d.activeElement;
-      if (quien && quien.name && f.contains(quien)) fd.append(quien.name, quien.value || "");
-      const empaque = new v.Response(fd);
-      const cuerpo = new Uint8Array(await empaque.arrayBuffer());
+      for (const el of f.elements) {
+        if (!el.name || el.disabled) continue;
+        const t = (el.type || "").toLowerCase();
+        if (t === "file") {
+          for (const file of el.files || []) {
+            partes.push(enc.encode(`--${borde}\r\nContent-Disposition: form-data; name="${el.name}"; filename="${(file.name || "copia").replace(/["\r\n]/g, "")}"\r\nContent-Type: application/octet-stream\r\n\r\n`));
+            partes.push(await leerArchivo(file));
+            partes.push(enc.encode("\r\n"));
+          }
+          continue;
+        }
+        if ((t === "checkbox" || t === "radio") && !el.checked) continue;
+        if (["submit", "button", "reset", "image"].includes(t) && el !== quien) continue;
+        partes.push(enc.encode(`--${borde}\r\nContent-Disposition: form-data; name="${el.name}"\r\n\r\n${el.value}\r\n`));
+      }
+      partes.push(enc.encode(`--${borde}--\r\n`));
+      const total = partes.reduce((n, x) => n + x.length, 0), cuerpo = new Uint8Array(total);
+      let i = 0; for (const x of partes) { cuerpo.set(x, i); i += x.length; }
+      return { cuerpo, tipo: "multipart/form-data; boundary=" + borde };
+    }
+    async function enviarConArchivo(f, d) {
+      const { cuerpo, tipo } = await empaquetar(f, d);
       const destino = new URL(f.getAttribute("action") || d.location.href, d.location.href);
-      const r = await enCola(() => atenderPedido({ metodo: "POST", ruta: destino.pathname + destino.search,
-        cuerpo, contenido: empaque.headers.get("Content-Type") }));
+      const r = await enCola(() => atenderPedido({ metodo: "POST", ruta: destino.pathname + destino.search, cuerpo, contenido: tipo }));
       const loc = (r.cabeceras.find(([k]) => k.toLowerCase() === "location") || [])[1];
       if (r.estado >= 300 && r.estado < 400 && loc) { marco.contentWindow.location.href = new URL(loc, d.location.href).href; return; }
       if (r.estado === 204 || !r.contenido) return;
@@ -179,7 +211,12 @@
         const f = ev.target;
         if (ev.defaultPrevented || !f || f.tagName !== "FORM" || !f.querySelector('input[type="file"]')) return;
         ev.preventDefault();
-        enviarConArchivo(f, d).catch((e) => { console.error(e); alert("No se pudo enviar el archivo. Inténtalo otra vez."); });
+        const boton = f.querySelector("button.primario");
+        if (boton) { boton.disabled = true; boton.dataset.texto = boton.textContent; boton.textContent = "Recuperando… espera"; }
+        enviarConArchivo(f, d).catch((e) => {
+          console.error(e);
+          alert("No se pudo enviar el archivo (versión " + (window.VERSION_APP || "?") + "):\n" + (e && (e.message || e)));
+        }).finally(() => { if (boton && boton.isConnected) { boton.disabled = false; boton.textContent = boton.dataset.texto; } });
       });
     }
     marco.addEventListener("load", engancharArchivos);
