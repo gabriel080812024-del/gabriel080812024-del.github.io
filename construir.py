@@ -37,7 +37,7 @@ SALIDA.write_bytes(datos)
 
 # versión = huella del contenido (programa + página + intermediario)
 h = hashlib.sha256(datos)
-for f in ("index.html", "_ipad/arranque.js"):
+for f in ("index.html", "_ipad/arranque.js", "_ipad/motor.js"):
     h.update((AQUI / f).read_bytes())
 version = h.hexdigest()[:10]
 sw = AQUI / "sw.js"

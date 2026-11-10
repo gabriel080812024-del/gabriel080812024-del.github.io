@@ -1,5 +1,6 @@
 /* Mi Contabilidad para iPad — arranque.
-   Carga Python (Pyodide) y el programa de la Mac dentro del iPad, y atiende cada pantalla. Sin internet. */
+   La pantalla vive aquí; el programa (Python) corre en un hilo aparte (motor.js) para que nada se trabe.
+   Cada pantalla que pide el iPad pasa por el intermediario (sw.js) → aquí → el motor → y vuelve. Sin internet. */
 (() => {
   "use strict";
   if (window.top !== window) {  // nunca debe cargarse dentro de sí misma
@@ -26,11 +27,24 @@
     $("instalar").style.display = "block";
   }
 
-  let py = null, atender = null, guardar = null, vigilar = null, cola = Promise.resolve();
-  const enCola = (f) => (cola = cola.then(f, f));
+  // ---------------------------------------------------------------- el motor (hilo aparte)
+  let motor = null, listo = false, n = 0;
+  const espera = new Map();
+  function llamar(op, datos = {}, transferir = []) {
+    return new Promise((ok, mal) => {
+      const id = ++n;
+      espera.set(id, { ok, mal });
+      motor.postMessage(Object.assign({ id, op }, datos), transferir);
+    });
+  }
 
-  async function guardarEnIpad() {
-    await new Promise((ok, mal) => py.FS.syncfs(false, (e) => (e ? mal(e) : ok())));
+  // barrita de "cargando" si algo tarda
+  let pendientes = 0, temporizador = null;
+  function ocupado(si) {
+    pendientes += si ? 1 : -1;
+    clearTimeout(temporizador);
+    if (pendientes > 0) temporizador = setTimeout(() => $("cargando").classList.add("activo"), 250);
+    else $("cargando").classList.remove("activo");
   }
 
   // ---------------------------------------------------------------- archivos que el programa entrega
@@ -69,45 +83,37 @@
 
   // ---------------------------------------------------------------- cada pedido de la pantalla
   async function atenderPedido(m) {
-    let estado = 500, cabeceras = [["Content-Type", "text/html; charset=utf-8"]], contenido = null;
+    const visible = !/^\/(static\/|api\/)/.test(m.ruta);
+    if (visible) ocupado(true);
+    let r;
     try {
-      const r = atender(m.metodo, m.ruta, m.cuerpo, m.contenido);
-      const js = r.toJs();
-      r.destroy();
-      [estado, cabeceras, contenido] = js;
-      if (!(contenido instanceof Uint8Array)) contenido = new Uint8Array(contenido);
+      r = await llamar("pedido", { metodo: m.metodo, ruta: m.ruta, cuerpo: m.cuerpo || null, contenido: m.contenido || null },
+                       m.cuerpo && m.cuerpo.buffer ? [m.cuerpo.buffer] : []);
     } catch (e) {
-      console.error(e);
-      contenido = new TextEncoder().encode(`<meta charset="utf-8"><body style="font:17px -apple-system;padding:30px">
-        <h2>Algo falló</h2><p>No se guardó nada de este paso. Vuelve atrás e inténtalo otra vez.</p>
-        <pre style="white-space:pre-wrap;color:#888;font-size:12px">${String(e).slice(-800).replace(/</g, "&lt;")}</pre>`);
+      r = { estado: 500, cabeceras: [["Content-Type", "text/html; charset=utf-8"]],
+            contenido: new TextEncoder().encode('<meta charset="utf-8"><body style="font:17px -apple-system;padding:30px">Algo falló. Vuelve atrás e inténtalo otra vez.') };
+    } finally {
+      if (visible) ocupado(false);
     }
-    const disp = (cabeceras.find(([k]) => k.toLowerCase() === "content-disposition") || [])[1] || "";
-    if (/attachment/i.test(disp) && estado === 200) {
-      const tipo = (cabeceras.find(([k]) => k.toLowerCase() === "content-type") || [])[1];
-      mostrarArchivo(nombreDe(disp), tipo, contenido);
-      estado = 204; cabeceras = []; contenido = null;  // la pantalla se queda donde estaba
+    const disp = (r.cabeceras.find(([k]) => k.toLowerCase() === "content-disposition") || [])[1] || "";
+    if (/attachment/i.test(disp) && r.estado === 200) {
+      const tipo = (r.cabeceras.find(([k]) => k.toLowerCase() === "content-type") || [])[1];
+      mostrarArchivo(nombreDe(disp), tipo, r.contenido);
+      return { estado: 204, cabeceras: [], contenido: null };  // la pantalla se queda donde estaba
     }
-    try {  // el latido de la pantalla y los archivos de estilo no cambian nada: no hace falta guardar
-      const cambia = !/^\/(static\/|api\/)/.test(m.ruta);
-      if (cambia && m.metodo !== "GET") guardar();
-      if (cambia) await guardarEnIpad();
-    } catch (e) { console.error("guardar", e); }
-    return { estado, cabeceras, contenido };
+    return r;
   }
 
   navigator.serviceWorker && navigator.serviceWorker.addEventListener("message", (ev) => {
     if (!ev.data || ev.data.tipo !== "pedido" || !ev.ports[0]) return;
+    if (!listo) return;  // esta ventana no tiene el programa (otra ventana lo atiende)
     const puerto = ev.ports[0];
-    if (!atender) return;  // esta ventana no tiene el programa (otra ventana lo atiende)
-    enCola(() => atenderPedido(ev.data)).then((r) => {
-      puerto.postMessage(r, r.contenido ? [r.contenido.buffer] : []);
-    });
+    atenderPedido(ev.data).then((r) => puerto.postMessage(r, r.contenido ? [r.contenido.buffer] : []));
   });
 
   // ---------------------------------------------------------------- arranque
   async function iniciar() {
-    if (!("serviceWorker" in navigator)) {
+    if (!("serviceWorker" in navigator) || !("Worker" in window)) {
       return fallo("Este navegador no sirve para la app. Abre esta página en <b>Safari</b> (iPad con iPadOS 16.4 o más nuevo).");
     }
     paso("Preparando la app…");
@@ -131,29 +137,23 @@
     navigator.serviceWorker.addEventListener("controllerchange", () => {
       let ruta = "/";
       try { ruta = $("marco").contentWindow.location.pathname; } catch (e) {}
-      if (!atender || /^\/(entrar|crear-usuario|restaurar-copia|verificar|recuperar)/.test(ruta)) location.reload();
+      if (!listo || /^\/(entrar|crear-usuario|restaurar-copia|verificar|recuperar)/.test(ruta)) location.reload();
     });
     registro.update().catch(() => {});
 
-    paso("Cargando el motor…", "La primera vez tarda un poco más");
-    py = await loadPyodide({ indexURL: "/_ipad/pyodide/" });
-    paso("Cargando la seguridad…");
-    await py.loadPackage(["cryptography", "sqlite3", "markupsafe", "hashlib"], { messageCallback: () => {} });
-
-    paso("Abriendo tus datos…");
-    py.FS.mkdir("/datos");
-    py.FS.mount(py.FS.filesystems.IDBFS, {}, "/datos");
-    await new Promise((ok, mal) => py.FS.syncfs(true, (e) => (e ? mal(e) : ok())));
-
-    paso("Cargando el programa…");
-    const zip = await (await fetch("/_ipad/programa.zip")).arrayBuffer();
-    py.unpackArchive(zip, "zip", { extractDir: "/programa" });
-    py.runPython("import sys; sys.path.insert(0, '/programa')");
-    await py.runPythonAsync("import puente");
-    const puente = py.pyimport("puente");
-    atender = puente.atender; guardar = puente.guardar; vigilar = puente.vigilar;
-    if (location.hostname === "localhost") window.__py = py;  // solo para pruebas en la Mac
-    await guardarEnIpad();
+    motor = new Worker("/_ipad/motor.js");
+    motor.onmessage = (ev) => {
+      const d = ev.data || {};
+      if (d.tipo === "paso") return paso(d.texto, d.detalle);
+      const p = espera.get(d.id);
+      if (!p) return;
+      espera.delete(d.id);
+      d.error ? p.mal(new Error(d.error)) : p.ok(d.r);
+    };
+    motor.onerror = (e) => fallo("No se pudo arrancar el programa.<br><small>" + String(e.message || e).replace(/</g, "&lt;") + "</small>");
+    await llamar("listo");
+    listo = true;
+    if (location.hostname === "localhost") window.__motor = llamar;  // solo para pruebas en la Mac
 
     paso("Listo");
     const marco = $("marco");
@@ -186,14 +186,14 @@
         partes.push(enc.encode(`--${borde}\r\nContent-Disposition: form-data; name="${el.name}"\r\n\r\n${el.value}\r\n`));
       }
       partes.push(enc.encode(`--${borde}--\r\n`));
-      const total = partes.reduce((n, x) => n + x.length, 0), cuerpo = new Uint8Array(total);
+      const total = partes.reduce((k, x) => k + x.length, 0), cuerpo = new Uint8Array(total);
       let i = 0; for (const x of partes) { cuerpo.set(x, i); i += x.length; }
       return { cuerpo, tipo: "multipart/form-data; boundary=" + borde };
     }
     async function enviarConArchivo(f, d) {
       const { cuerpo, tipo } = await empaquetar(f, d);
       const destino = new URL(f.getAttribute("action") || d.location.href, d.location.href);
-      const r = await enCola(() => atenderPedido({ metodo: "POST", ruta: destino.pathname + destino.search, cuerpo, contenido: tipo }));
+      const r = await atenderPedido({ metodo: "POST", ruta: destino.pathname + destino.search, cuerpo, contenido: tipo });
       const loc = (r.cabeceras.find(([k]) => k.toLowerCase() === "location") || [])[1];
       if (r.estado >= 300 && r.estado < 400 && loc) { marco.contentWindow.location.href = new URL(loc, d.location.href).href; return; }
       if (r.estado === 204 || !r.contenido) return;
@@ -226,13 +226,11 @@
       try { document.title = marco.contentDocument.title || "Mi Contabilidad"; } catch (e) {}
     });
 
-    setInterval(() => enCola(async () => {
-      try { if (vigilar()) await guardarEnIpad(); } catch (e) { console.error(e); }
-    }), 30000);
-    const alSalir = () => enCola(async () => { try { guardar(); await guardarEnIpad(); } catch (e) {} });
+    setInterval(() => { llamar("vigilar").catch(() => {}); }, 30000);
+    const alSalir = () => { llamar("guardar").catch(() => {}); };
     document.addEventListener("visibilitychange", () => {
       if (document.visibilityState === "hidden") alSalir();
-      else enCola(async () => { try { if (vigilar()) { await guardarEnIpad(); marco.contentWindow.location.reload(); } } catch (e) {} });
+      else llamar("vigilar").then((cerro) => { if (cerro) marco.contentWindow.location.reload(); }).catch(() => {});
     });
     window.addEventListener("pagehide", alSalir);
   }

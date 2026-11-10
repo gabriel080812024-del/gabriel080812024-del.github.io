@@ -15,6 +15,10 @@
   :root { --verde: #0b5d56; --texto: #16302b; --gris: #5b766f; --fondo: #f4f7f6; }
   * { box-sizing: border-box; }
   html, body { margin: 0; height: 100%; background: #fff; font: 16px/1.45 -apple-system, "Helvetica Neue", sans-serif; color: var(--texto); }
+  #cargando { position: fixed; top: 0; left: 0; right: 0; height: 3px; z-index: 6; pointer-events: none; opacity: 0; transition: opacity .15s;
+    background: linear-gradient(90deg, transparent, #e8890c, #0b5d56, transparent); background-size: 200% 100%; }
+  #cargando.activo { opacity: 1; animation: cargando 1s linear infinite; }
+  @keyframes cargando { from { background-position: 100% 0; } to { background-position: -100% 0; } }
   #marco { position: fixed; inset: 0; width: 100%; height: 100%; border: 0; display: none; background: #fff; }
   #arranque { position: fixed; inset: 0; display: flex; flex-direction: column; align-items: center; justify-content: center;
     padding: 24px; background: var(--fondo); text-align: center; }
@@ -52,6 +56,7 @@
     → <b>Añadir a pantalla de inicio</b> → <b>Añadir</b>. Después ábrela siempre desde ese icono.</div>
 </div>
 <iframe id="marco" title="Mi Contabilidad"></iframe>
+<div id="cargando" aria-hidden="true"></div>
 <div id="archivo" role="dialog" aria-modal="true">
   <div class="tarjeta">
     <h2 id="archivo-titulo">Archivo listo</h2>
@@ -64,7 +69,6 @@
   </div>
 </div>
 <script src="/_ipad/version.js"></script>
-<script src="/_ipad/pyodide/pyodide.js"></script>
 <script src="/_ipad/arranque.js"></script>
 </body>
 </html>

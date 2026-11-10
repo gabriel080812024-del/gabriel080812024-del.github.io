@@ -2,10 +2,11 @@
    - Guarda la app en el iPad para que funcione sin internet.
    - Cada pantalla del programa (/, /caja, /registrar/...) se la pide a la página principal,
      que tiene el programa corriendo dentro (Python en el navegador). Nada sale del iPad. */
-const VERSION = "f894cc7369";
+const VERSION = "49f0af8987";
 const CACHE = "mc-ipad-" + VERSION;
+const ESTILOS = "mc-ipad-est-" + VERSION;  // estilos, scripts e imágenes del programa (se guardan aparte en cada versión)
 const PROPIOS = [
-  "/", "/_ipad/arranque.js", "/_ipad/version.js", "/_ipad/programa.zip", "/_ipad/manifest.webmanifest",
+  "/", "/_ipad/arranque.js", "/_ipad/motor.js", "/_ipad/version.js", "/_ipad/programa.zip", "/_ipad/manifest.webmanifest",
   "/_ipad/icono-180.png", "/_ipad/icono-192.png", "/_ipad/icono-512.png",
   "/_ipad/pyodide/pyodide.js", "/_ipad/pyodide/pyodide.asm.js", "/_ipad/pyodide/pyodide.asm.wasm",
   "/_ipad/pyodide/python_stdlib.zip", "/_ipad/pyodide/pyodide-lock.json",
@@ -26,7 +27,7 @@ self.addEventListener("install", (e) => {
 
 self.addEventListener("activate", (e) => {
   e.waitUntil((async () => {
-    for (const k of await caches.keys()) if (k.startsWith("mc-ipad-") && k !== CACHE) await caches.delete(k);
+    for (const k of await caches.keys()) if (k.startsWith("mc-ipad-") && k !== CACHE && k !== ESTILOS) await caches.delete(k);
     await self.clients.claim();
   })());
 });
@@ -85,6 +86,21 @@ self.addEventListener("fetch", (e) => {
   const p = url.pathname;
   if (p.startsWith("/mi-contabilidad-visor")) return;              // el visor del iPhone va por su cuenta
   if (p.startsWith("/_ipad/") || p === "/sw.js") { e.respondWith(desdeCache(e.request)); return; }
+  if (p === "/api/latido") {                                          // el latido de la Mac: aquí no hace falta
+    e.respondWith(new Response('{"ok":true}', { headers: { "Content-Type": "application/json" } }));
+    return;
+  }
+  if (p.startsWith("/static/") && e.request.method === "GET") {        // estilos e imágenes: se guardan la primera vez
+    e.respondWith((async () => {
+      const c = await caches.open(ESTILOS);
+      const guardado = await c.match(e.request, { ignoreSearch: true });
+      if (guardado) return guardado;
+      const r = await alPrograma(e);
+      if (r.status === 200) await c.put(new Request(url.pathname), r.clone());
+      return r;
+    })());
+    return;
+  }
   if (e.request.mode === "navigate" && e.request.destination === "document") {
     e.respondWith(desdeCache(new Request("/")));                      // la página principal (con el programa)
     return;
