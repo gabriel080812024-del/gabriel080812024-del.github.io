@@ -1,1 +1,1 @@
-window.VERSION_APP = "bc65361b5b";
+window.VERSION_APP = "d1caa65484";
