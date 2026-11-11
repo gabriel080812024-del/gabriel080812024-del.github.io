@@ -2,7 +2,7 @@
    - Guarda la app en el iPad para que funcione sin internet.
    - Cada pantalla del programa (/, /caja, /registrar/...) se la pide a la página principal,
      que tiene el programa corriendo dentro (Python en el navegador). Nada sale del iPad. */
-const VERSION = "8d97598a27";
+const VERSION = "9f2b5c131f";
 const CACHE = "mc-ipad-" + VERSION;
 const ESTILOS = "mc-ipad-est-" + VERSION;  // estilos, scripts e imágenes del programa (se guardan aparte en cada versión)
 const PROPIOS = [
@@ -18,6 +18,8 @@ const PROPIOS = [
   "/_ipad/pyodide/six-1.16.0-py2.py3-none-any.whl",
   "/_ipad/pyodide/sqlite3-1.0.0-cp312-cp312-pyodide_2024_0_wasm32.whl",
   "/_ipad/pyodide/hashlib-1.0.0-cp312-cp312-pyodide_2024_0_wasm32.whl",
+  "/_ipad/pyodide/pillow-10.2.0-cp312-cp312-pyodide_2024_0_wasm32.whl",
+  "/_ipad/pyodide/fonttools-4.51.0-py3-none-any.whl",
 ];
 
 self.addEventListener("install", (e) => {

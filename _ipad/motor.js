@@ -30,7 +30,7 @@ async function iniciar() {
   await cargarScript("/_ipad/pyodide/pyodide.asm.js");
   py = await loadPyodide({ indexURL: "/_ipad/pyodide/" });
   paso("Cargando la seguridad…");
-  await py.loadPackage(["cryptography", "sqlite3", "markupsafe", "hashlib"], { messageCallback: () => {} });
+  await py.loadPackage(["cryptography", "sqlite3", "markupsafe", "hashlib", "pillow", "fonttools"], { messageCallback: () => {} });
   paso("Abriendo tus datos…");
   py.FS.mkdir("/datos");
   py.FS.mount(py.FS.filesystems.IDBFS, {}, "/datos");
