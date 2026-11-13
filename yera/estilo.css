@@ -73,3 +73,53 @@ input.leido { background: #eafaf2; border-color: #9fd5b8; }
 .pestanas button.on { background: var(--verde); color: #fff; border-color: var(--verde); }
 .atras[hidden], [hidden] { display: none !important; }
 .pestanas { scrollbar-width: none; } .pestanas::-webkit-scrollbar { display: none; }
+
+/* ---------- diseño A: banca moderna ---------- */
+:root { --entra: #15803d; --entra-t: #e3f6ec; --sale: #c62828; --sale-t: #fdecea; --zelle: #6d28d9; --zelle-t: #efe9fd; --cambio-t: #e6f0fb; --cambio: #1d5fa5; }
+body.con-nav main { padding-bottom: calc(110px + env(safe-area-inset-bottom)); }
+.barra { box-shadow: none; }
+.saldo-cab { background: var(--verde); color: #fff; margin: -14px -14px 14px; padding: 6px 20px 20px; border-radius: 0 0 24px 24px; }
+.saldo-cab small { opacity: .8; font-size: 13px; }
+.saldo-dos { display: flex; gap: 22px; margin-top: 4px; flex-wrap: wrap; }
+.saldo-dos b { font-size: 27px; font-weight: 700; letter-spacing: -.01em; font-variant-numeric: tabular-nums; }
+.saldo-dos span { font-size: 13px; opacity: .8; margin-left: 5px; }
+.saldo-cab .neg { color: #ffd2cc; }
+.saldo-cab p { margin: 10px 0 0; font-size: 13.5px; opacity: .92; }
+.rapidos { display: grid; grid-template-columns: repeat(4, 1fr); gap: 6px; margin: 0 0 6px; }
+.rapidos button { background: none; border: 0; display: flex; flex-direction: column; align-items: center; gap: 6px; font: 600 12.5px system-ui, sans-serif; color: var(--texto); padding: 6px 0; }
+.rapidos .ic, .mov .ic { width: 46px; height: 46px; border-radius: 16px; display: grid; place-items: center; border: 0; }
+.mov .ic { width: 40px; height: 40px; border-radius: 13px; }
+.ic.entra { background: var(--entra-t); color: var(--entra); } .ic.sale { background: var(--sale-t); color: var(--sale); }
+.ic.zelle { background: var(--zelle-t); color: var(--zelle); } .ic.cambio { background: var(--cambio-t); color: var(--cambio); }
+.mov .im.ent { color: var(--entra); } .mov .im.sal { color: var(--sale); }
+.mov .im small { color: var(--gris); }
+h2 { text-transform: none; letter-spacing: 0; font-size: 14px; color: var(--texto); margin: 16px 4px 8px; }
+.nav { position: fixed; left: 0; right: 0; bottom: 0; z-index: 20; display: none; grid-template-columns: repeat(5, 1fr); align-items: end;
+  background: #fff; border-top: 1px solid var(--linea); padding: 6px 4px calc(8px + env(safe-area-inset-bottom)); }
+body.con-nav .nav { display: grid; }
+.nav button { background: none; border: 0; display: flex; flex-direction: column; align-items: center; gap: 2px; font: 600 11px system-ui, sans-serif; color: var(--gris); padding: 4px 0; }
+.nav button.on { color: var(--verde); }
+.nav .fab { justify-self: center; width: 60px; height: 60px; border-radius: 50%; background: var(--verde); color: #fff; margin-top: -26px;
+  box-shadow: 0 8px 20px rgba(15, 118, 110, .35); display: grid; place-items: center; }
+.nav .fab svg { width: 26px; height: 26px; }
+.aviso-flotante { bottom: calc(96px + env(safe-area-inset-bottom)); }
+/* diario */
+.mes-sel { display: flex; align-items: center; justify-content: space-between; background: #fff; border: 1px solid var(--linea); border-radius: 16px; padding: 6px; margin-bottom: 10px; }
+.mes-sel b { text-transform: capitalize; font-size: 16px; }
+.mes-sel button { width: 42px; height: 42px; border-radius: 12px; border: 0; background: var(--tinte2); color: var(--verde-osc); display: grid; place-items: center; }
+.mes-sel button:disabled { opacity: .35; }
+.resumen-mes { display: grid; grid-template-columns: 1fr 1fr; gap: 10px; }
+.resumen-mes > div { background: #fff; border: 1px solid var(--linea); border-radius: 16px; padding: 12px; }
+.resumen-mes small { color: var(--gris); font-size: 12.5px; display: block; }
+.resumen-mes b { font-size: 20px; display: block; font-variant-numeric: tabular-nums; margin: 2px 0 4px; }
+.resumen-mes span { font-size: 12.5px; font-weight: 600; }
+.resumen-mes em { display: block; font-style: normal; font-size: 11.5px; color: var(--gris); margin-top: 4px; }
+.ent { color: var(--entra); } .sal { color: var(--sale); }
+.dia-cab { display: flex; justify-content: space-between; align-items: baseline; gap: 10px; margin: 16px 4px 8px; flex-wrap: wrap; }
+.dia-cab b { font-size: 14px; } .dia-cab span { font-size: 12px; color: var(--gris); }
+@media print {
+  .barra, .nav, .no-imprimir, .aviso-flotante, .mes-sel button { display: none !important; }
+  body { background: #fff; } main { padding: 0; max-width: none; }
+  .lista, .resumen-mes > div, .mes-sel { border-color: #ccc; break-inside: avoid; }
+  .mov { break-inside: avoid; }
+}

@@ -1,5 +1,5 @@
 /* Caja del Yera: guarda la app en el teléfono para que funcione sin internet. */
-const VERSION = "ec3bbb9d66";
+const VERSION = "62aea2fea0";
 const CACHE = "caja-yera-" + VERSION;
 const ARCHIVOS = ["./", "index.html", "estilo.css", "app.js", "lector.js", "manifest.webmanifest", "icono-192.png", "icono-512.png",
   "lib/ocr/tesseract.min.js", "lib/ocr/worker.min.js", "lib/ocr/tesseract-core-simd-lstm.wasm.js", "lib/ocr/tesseract-core-lstm.wasm.js",

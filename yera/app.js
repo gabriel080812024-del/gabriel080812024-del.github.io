@@ -18,6 +18,10 @@
     camara: '<path d="M5 7h2l2-3h6l2 3h2a2 2 0 0 1 2 2v9a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V9a2 2 0 0 1 2-2z"/><circle cx="12" cy="13" r="3.5"/>',
     enviar: '<path d="M10 14L21 3"/><path d="M21 3l-6.5 18a.55.55 0 0 1-1 0L10 14l-7-3.5a.55.55 0 0 1 0-1z"/>',
     ajustes: '<path d="M4 10a2 2 0 1 0 4 0 2 2 0 0 0-4 0M6 4v4M6 12v8M10 16a2 2 0 1 0 4 0 2 2 0 0 0-4 0M12 4v10M12 18v2M16 7a2 2 0 1 0 4 0 2 2 0 0 0-4 0M18 4v1M18 9v11"/>',
+    inicio: '<path d="M5 12H3l9-9 9 9h-2"/><path d="M5 12v7a2 2 0 0 0 2 2h10a2 2 0 0 0 2-2v-7"/><path d="M9 21v-6a2 2 0 0 1 2-2h2a2 2 0 0 1 2 2v6"/>',
+    libro: '<path d="M3 19a9 9 0 0 1 9 0a9 9 0 0 1 9 0"/><path d="M3 6a9 9 0 0 1 9 0a9 9 0 0 1 9 0"/><path d="M3 6v13M12 6v13M21 6v13"/>',
+    compartir: '<path d="M8 9H7a2 2 0 0 0-2 2v8a2 2 0 0 0 2 2h10a2 2 0 0 0 2-2v-8a2 2 0 0 0-2-2h-1"/><path d="M12 14V3M9 6l3-3 3 3"/>',
+    izq: '<path d="M15 6l-6 6 6 6"/>', der: '<path d="M9 6l6 6-6 6"/>',
     papelera: '<path d="M4 7h16M10 11v6M14 11v6M5 7l1 12a2 2 0 0 0 2 2h8a2 2 0 0 0 2-2l1-12M9 7V4h6v3"/>',
   };
   const ico = (n) => `<svg viewBox="0 0 24 24" aria-hidden="true">${P[n] || ""}</svg>`;
@@ -108,7 +112,18 @@
   function ir(ruta) { location.hash = ruta; }
   window.addEventListener("hashchange", pintar);
   $("#atras").onclick = () => (history.length > 1 ? history.back() : ir("#/"));
-  function cabecera(titulo, conAtras) { $("#titulo").textContent = titulo; $("#atras").hidden = !conAtras; window.scrollTo(0, 0); }
+  function cabecera(titulo, conAtras, seccion) {
+    $("#titulo").textContent = titulo; $("#atras").hidden = !conAtras; window.scrollTo(0, 0);
+    document.body.classList.toggle("con-nav", !!seccion);
+    document.querySelectorAll("#nav [data-sec]").forEach((b) => b.classList.toggle("on", b.dataset.sec === seccion));
+  }
+  document.body.insertAdjacentHTML("beforeend", `<nav class="nav" id="nav">
+    <button data-sec="inicio" data-ir="#/">${ico("inicio")}<span>Inicio</span></button>
+    <button data-sec="diario" data-ir="#/diario">${ico("libro")}<span>Diario</span></button>
+    <button class="fab" data-ir="#/nuevo/zelle" aria-label="Subir captura de Zelle">${ico("camara")}</button>
+    <button data-sec="enviar" data-ir="#/enviar">${ico("enviar")}<span>Enviar</span></button>
+    <button data-sec="ajustes" data-ir="#/ajustes">${ico("ajustes")}<span>Ajustes</span></button></nav>`);
+  document.querySelectorAll("#nav [data-ir]").forEach((b) => (b.onclick = () => ir(b.dataset.ir)));
   let tAviso = null;
   function avisar(t, malo) {
     const a = $("#aviso"); a.textContent = t; a.className = "aviso-flotante" + (malo ? " malo" : ""); a.hidden = false;
@@ -124,42 +139,151 @@
       if (r[0] === "editar") return await vistaForm(null, r[1]);
       if (r[0] === "mov") return await vistaDetalle(r[1]);
       if (r[0] === "enviar") return await vistaEnviar();
+      if (r[0] === "diario") return await vistaDiario(r[1]);
+      if (r[0] === "ajustes") return await vistaAjustes();
       return await vistaInicio();
     } catch (e) { console.error(e); vista.innerHTML = `<div class="tarjeta">Algo falló: ${esc(e.message || e)}</div>`; }
   }
 
-  // ------------------------------------------------------------ inicio
-  let filtro = "todo";
+  // ------------------------------------------------------------ cuánto mueve cada operación (para saldos y colores)
+  function efecto(m) {
+    switch (m.tipo) {
+      case "recibi": return { [m.moneda]: m.importe };
+      case "pague": case "entregue": return { [m.moneda]: -m.importe };
+      case "cambio": return { CUP: -m.cup, USD: m.usd };
+      case "zelle": { const e = {}; if (m.pago_usd) e.USD = -m.pago_usd; if (m.pago_cup) e.CUP = -m.pago_cup; return e; }
+    }
+    return {};
+  }
+  const tono = (m) => m.tipo === "zelle" ? "zelle" : m.tipo === "recibi" ? "entra" : m.tipo === "cambio" ? "cambio" : "sale";
+  const DIAS = ["Domingo", "Lunes", "Martes", "Miércoles", "Jueves", "Viernes", "Sábado"];
+  const MESES = ["enero", "febrero", "marzo", "abril", "mayo", "junio", "julio", "agosto", "septiembre", "octubre", "noviembre", "diciembre"];
+  function nombreDia(f) {
+    const h = hoy(), ay = fechaDe(Date.now() - 864e5);
+    if (f === h) return "Hoy";
+    if (f === ay) return "Ayer";
+    const d = new Date(f + "T12:00:00");
+    return `${DIAS[d.getDay()]} ${f.slice(8, 10)}/${f.slice(5, 7)}`;
+  }
+  function filaMov(m, extra) {
+    const r = resumenMov(m), t = tono(m);
+    const signo = t === "entra" || t === "zelle" || t === "cambio" ? "ent" : "sal";
+    return `<button class="mov" data-ir="#/mov/${m.id}"><span class="ic ${t}">${ico(TIPOS[m.tipo].icono)}</span>
+      <span class="tx"><b>${esc(r.t)}</b>${r.d ? `<small>${esc(r.d)}</small>` : ""}</span>
+      <span class="im ${signo}">${r.i}<small>${esc(extra || r.s)}</small></span></button>`;
+  }
+  function agruparPorDia(lista) {
+    const g = [];
+    for (const m of lista) { const u = g[g.length - 1]; if (u && u.fecha === m.fecha) u.movs.push(m); else g.push({ fecha: m.fecha, movs: [m] }); }
+    return g;
+  }
+
+  // ------------------------------------------------------------ inicio (estilo banca)
   async function vistaInicio() {
-    cabecera("Caja del Yera", false);
+    cabecera("Caja del Yera", false, "inicio");
     const movs = await todos(), s = saldos(movs);
     const pct = s.zelleMes ? (s.costoMes / s.zelleMes - 1) * 100 : 0;
-    const lista = movs.filter((m) => filtro === "todo" || m.tipo === filtro);
+    const recientes = movs.slice(0, 25);
     vista.innerHTML = `
-      <div class="saldos">
-        <div class="saldo"><small>Tengo en CUP</small><b class="${s.CUP < -0.004 ? "neg" : ""}">${dinero(s.CUP, 0)}</b></div>
-        <div class="saldo"><small>Tengo en USD</small><b class="${s.USD < -0.004 ? "neg" : ""}">${dinero(s.USD)}</b></div>
-        <div class="saldo ancho"><span><small>Zelle comprado este mes</small><b>${dinero(s.zelleMes)} USD</b></span>
-          ${s.zelleMes ? `<span class="chip ${pct > 0 ? "naranja" : ""}">costó ${pct >= 0 ? "+" : ""}${pct.toFixed(1)} %</span>` : ""}</div>
+      <section class="saldo-cab">
+        <small>Tengo de Gabriel</small>
+        <div class="saldo-dos"><div><b class="${s.CUP < -0.004 ? "neg" : ""}">${dinero(s.CUP, 0)}</b><span>CUP</span></div>
+          <div><b class="${s.USD < -0.004 ? "neg" : ""}">${dinero(s.USD)}</b><span>USD</span></div></div>
+        <p>Zelle del mes <b>${dinero(s.zelleMes)}</b>${s.zelleMes ? ` · costó <b>${pct >= 0 ? "+" : ""}${pct.toFixed(1)} %</b>` : ""}</p>
+      </section>
+      <div class="rapidos">
+        ${["recibi", "cambio", "pague", "entregue"].map((k) => `<button data-ir="#/nuevo/${k}"><span class="ic ${tono({ tipo: k })}">${ico(TIPOS[k].icono)}</span>${TIPOS[k].corto === "Cambio" ? "Cambié" : TIPOS[k].corto}</button>`).join("")}
       </div>
-      <div class="acciones">
-        <button class="accion principal" data-ir="#/nuevo/zelle"><span class="ic">${ico("camara")}</span>Compré Zelle · subir captura</button>
-        <button class="accion" data-ir="#/nuevo/recibi"><span class="ic">${ico("recibi")}</span>Recibí</button>
-        <button class="accion" data-ir="#/nuevo/cambio"><span class="ic">${ico("cambio")}</span>Cambié</button>
-        <button class="accion" data-ir="#/nuevo/pague"><span class="ic">${ico("pague")}</span>Pagué</button>
-        <button class="accion" data-ir="#/nuevo/entregue"><span class="ic">${ico("entregue")}</span>Entregué</button>
-        <button class="accion" data-ir="#/enviar" style="grid-column: span 2"><span class="ic">${ico("enviar")}</span>Mandar a Gabriel / copia</button>
-      </div>
-      <div class="pestanas">${[["todo", "Todo"], ["zelle", "Zelle"], ["recibi", "Recibí"], ["cambio", "Cambios"], ["pague", "Pagos"], ["entregue", "Entregas"]]
-        .map(([k, v]) => `<button data-filtro="${k}" class="${filtro === k ? "on" : ""}">${v}</button>`).join("")}</div>
-      <div class="lista">${lista.length ? lista.slice(0, 300).map((m) => {
-        const r = resumenMov(m);
-        return `<button class="mov" data-ir="#/mov/${m.id}"><span class="ic">${ico(TIPOS[m.tipo].icono)}</span>
-          <span class="tx"><b>${esc(r.t)}</b><small>${fFecha(m.fecha)}${r.d ? " · " + esc(r.d) : ""}</small></span>
-          <span class="im">${r.i}<small>${esc(r.s)}</small></span></button>`;
-      }).join("") : `<div class="vacio">Todavía no hay nada anotado.<br>Empieza con <b>Compré Zelle</b> o <b>Recibí</b>.</div>`}</div>`;
+      ${recientes.length ? agruparPorDia(recientes).map((d) => `<h2>${nombreDia(d.fecha)}</h2><div class="lista">${d.movs.map((m) => filaMov(m)).join("")}</div>`).join("")
+        + (movs.length > recientes.length ? `<button class="boton sec" data-ir="#/diario">Ver todo en el diario</button>` : "")
+        : `<div class="lista"><div class="vacio">Todavía no hay nada anotado.<br>Toca el botón de la <b>cámara</b> para subir una captura de Zelle, o <b>Recibí</b> cuando te den dinero.</div></div>`}`;
     vista.querySelectorAll("[data-ir]").forEach((b) => (b.onclick = () => ir(b.dataset.ir)));
-    vista.querySelectorAll("[data-filtro]").forEach((b) => (b.onclick = () => { filtro = b.dataset.filtro; vistaInicio(); }));
+  }
+
+  // ------------------------------------------------------------ libro diario por días
+  async function vistaDiario(mesPedido) {
+    cabecera("Libro diario", false, "diario");
+    const movs = (await todos()).slice().sort((a, b) => (a.fecha + a.creado).localeCompare(b.fecha + b.creado));
+    const meses = [...new Set(movs.map((m) => m.fecha.slice(0, 7)))].sort();
+    const mes = mesPedido && /^\d{4}-\d{2}$/.test(mesPedido) ? mesPedido : (meses[meses.length - 1] || hoy().slice(0, 7));
+    // saldos corridos desde el principio
+    const corr = { CUP: 0, USD: 0 }, despues = new Map(), cierre = new Map();
+    let inicioMes = null, finMes = null;
+    for (const m of movs) {
+      if (m.fecha.slice(0, 7) >= mes && inicioMes === null) inicioMes = { ...corr };
+      for (const [k, v] of Object.entries(efecto(m))) corr[k] += v;
+      despues.set(m.id, { ...corr });
+      cierre.set(m.fecha, { ...corr });
+      if (m.fecha.slice(0, 7) <= mes) finMes = { ...corr };
+    }
+    if (inicioMes === null) inicioMes = { ...corr };
+    if (finMes === null) finMes = { CUP: 0, USD: 0 };
+    const delMes = movs.filter((m) => m.fecha.slice(0, 7) === mes);
+    const tot = { CUP: { e: 0, s: 0 }, USD: { e: 0, s: 0 } };
+    let zelle = 0;
+    for (const m of delMes) { for (const [k, v] of Object.entries(efecto(m))) v > 0 ? (tot[k].e += v) : (tot[k].s -= v); if (m.tipo === "zelle") zelle += m.zelle; }
+    const i = meses.indexOf(mes), ant = meses[i - 1] || null, sig = meses[i + 1] || null;
+    const queda = (m) => {
+      const d = despues.get(m.id), e = efecto(m);
+      return Object.keys(e).map((k) => `queda ${dinero(d[k], k === "CUP" ? 0 : 2)} ${k}`).join(" · ");
+    };
+    const dias = agruparPorDia(delMes.slice().reverse());
+    vista.innerHTML = `
+      <div class="mes-sel">
+        <button ${ant ? `data-ir="#/diario/${ant}"` : "disabled"} aria-label="Mes anterior">${ico("izq")}</button>
+        <b>${MESES[+mes.slice(5, 7) - 1]} ${mes.slice(0, 4)}</b>
+        <button ${sig ? `data-ir="#/diario/${sig}"` : "disabled"} aria-label="Mes siguiente">${ico("der")}</button>
+      </div>
+      <div class="resumen-mes">
+        ${["CUP", "USD"].map((k) => `<div><small>${k}</small><b>${dinero(finMes[k], k === "CUP" ? 0 : 2)}</b>
+          <span class="ent">+${dinero(tot[k].e, k === "CUP" ? 0 : 2)}</span> <span class="sal">−${dinero(tot[k].s, k === "CUP" ? 0 : 2)}</span>
+          <em>empezó el mes con ${dinero(inicioMes[k], k === "CUP" ? 0 : 2)}</em></div>`).join("")}
+      </div>
+      ${zelle ? `<p class="nota">Zelle comprado en el mes: <b>${dinero(zelle)} USD</b></p>` : ""}
+      ${dias.length ? dias.map((d) => {
+        const c = cierre.get(d.fecha);
+        return `<div class="dia-cab"><b>${nombreDia(d.fecha)}</b><span>al cerrar: ${dinero(c.USD)} USD · ${dinero(c.CUP, 0)} CUP</span></div>
+          <div class="lista">${d.movs.map((m) => filaMov(m, m.tipo === "cambio" ? `tasa ${dinero(m.cup / m.usd)}` : queda(m))).join("")}</div>`;
+      }).join("") : `<div class="lista"><div class="vacio">No hay operaciones en este mes.</div></div>`}
+      ${delMes.length ? `<button class="boton sec no-imprimir" id="pdf">${ico("compartir")} Guardar o mandar en PDF</button>` : ""}`;
+    vista.querySelectorAll("[data-ir]").forEach((b) => (b.onclick = () => ir(b.dataset.ir)));
+    const pdf = $("#pdf");
+    if (pdf) pdf.onclick = () => { document.title = `Diario del Yera - ${MESES[+mes.slice(5, 7) - 1]} ${mes.slice(0, 4)}`; window.print(); setTimeout(() => (document.title = "Caja del Yera"), 1500); };
+  }
+
+  // ------------------------------------------------------------ ajustes
+  async function vistaAjustes() {
+    cabecera("Ajustes", false, "ajustes");
+    const movs = await todos();
+    const est = navigator.storage && navigator.storage.estimate ? await navigator.storage.estimate() : null;
+    vista.innerHTML = `
+      <div class="tarjeta">
+        <b>Recuperar una copia</b>
+        <p class="nota">Si cambiaste de teléfono o se borró la app: elige el último archivo .yera que mandaste y escribe su contraseña.</p>
+        <label>Archivo (.yera)<input type="file" id="copia" accept=".yera,application/octet-stream"></label>
+        <label>Contraseña<input type="password" id="clave2" autocomplete="off"></label>
+        <button class="boton sec" id="recuperar">Recuperar</button>
+      </div>
+      <div class="tarjeta">
+        <b>Este teléfono</b>
+        <p class="nota">${movs.length} operaciones guardadas${est ? ` · ocupa ${(est.usage / 1048576).toFixed(1)} MB` : ""}. Todo se guarda solo aquí: manda el archivo a Gabriel cada semana, que también es tu copia.</p>
+        <p class="nota">Caja del Yera · funciona sin internet</p>
+      </div>`;
+    $("#recuperar").onclick = recuperarCopia;
+  }
+  async function recuperarCopia() {
+    const f = $("#copia").files[0];
+    if (!f) return avisar("Elige el archivo .yera.", true);
+    try {
+      const d = await leerArchivo(new Uint8Array(await f.arrayBuffer()), $("#clave2").value);
+      let n = 0;
+      for (const x of d.movimientos || []) {
+        if (x.comprobante && x.comprobante.datos) x.comprobante = deB64(x.comprobante.datos, x.comprobante.tipo);
+        else delete x.comprobante;
+        await guardarMov(x); n++;
+      }
+      avisar(`Recuperadas ${n} operaciones.`); ir("#/");
+    } catch (err) { avisar(err.message || String(err), true); }
   }
 
   // ------------------------------------------------------------ imágenes: comprimir, huellas para no repetir
@@ -414,7 +538,7 @@
     return JSON.parse(await descomprimir(new Uint8Array(plano), bytes[5] === 1));
   }
   async function vistaEnviar() {
-    cabecera("Mandar a Gabriel", true);
+    cabecera("Mandar a Gabriel", false, "enviar");
     const clave = (await ajuste("clave")) || "";
     const movs = await todos();
     vista.innerHTML = `
@@ -425,12 +549,7 @@
         <button class="boton" id="mandar">${ico("enviar")} Crear y mandar</button>
         <p class="nota">Ese mismo archivo es tu copia de seguridad: si cambias de teléfono, lo cargas abajo con la contraseña y recuperas todo.</p>
       </div>
-      <div class="tarjeta">
-        <b>Recuperar una copia</b>
-        <label>Archivo (.yera)<input type="file" id="copia" accept=".yera,application/octet-stream"></label>
-        <label>Contraseña<input type="password" id="clave2" autocomplete="off"></label>
-        <button class="boton sec" id="recuperar">Recuperar</button>
-      </div>`;
+`;
     $("#mandar").onclick = async (e) => {
       const c = $("#clave").value;
       if (c.length < 8) return avisar("La contraseña tiene que tener al menos 8 letras o números.", true);
@@ -448,20 +567,6 @@
         }
       } catch (err) { avisar("No se pudo crear el archivo: " + (err.message || err), true); }
       b.disabled = false; b.innerHTML = `${ico("enviar")} Crear y mandar`;
-    };
-    $("#recuperar").onclick = async () => {
-      const f = $("#copia").files[0];
-      if (!f) return avisar("Elige el archivo .yera.", true);
-      try {
-        const d = await leerArchivo(new Uint8Array(await f.arrayBuffer()), $("#clave2").value);
-        let n = 0;
-        for (const x of d.movimientos || []) {
-          if (x.comprobante && x.comprobante.datos) x.comprobante = deB64(x.comprobante.datos, x.comprobante.tipo);
-          else delete x.comprobante;
-          await guardarMov(x); n++;
-        }
-        avisar(`Recuperados ${n} movimientos.`); ir("#/");
-      } catch (err) { avisar(err.message || String(err), true); }
     };
   }
 
