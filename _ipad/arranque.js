@@ -58,8 +58,10 @@
     $("archivo-nombre").textContent = nombre + " · " + Math.max(1, Math.round(datos.length / 1024)) + " KB";
     $("archivo-titulo").textContent = /\.mcvisor$/i.test(nombre) ? "Archivo para el iPhone listo"
       : /\.cifrado$/i.test(nombre) ? "Copia de seguridad lista"
-      : /\.pdf$/i.test(nombre) ? "PDF listo para enviar" : "Archivo listo";
-    $("archivo-ayuda").innerHTML = /\.pdf$/i.test(nombre)
+      : /\.pdf$/i.test(nombre) ? "PDF listo para enviar"
+      : /\.png$/i.test(nombre) ? "Imagen lista para enviar"
+      : /\.xlsx$/i.test(nombre) ? "Excel listo" : "Archivo listo";
+    $("archivo-ayuda").innerHTML = /\.(pdf|png)$/i.test(nombre)
       ? "Elige <b>WhatsApp</b> para mandárselo al cliente, <b>AirDrop</b>, <b>Imprimir</b> o <b>Guardar en Archivos</b>."
       : "Elige <b>AirDrop</b> para mandarlo a la Mac o al iPhone, <b>WhatsApp</b>, o <b>Guardar en Archivos</b>.";
     $("archivo").style.display = "flex";
