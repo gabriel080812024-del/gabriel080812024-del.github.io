@@ -82,31 +82,36 @@
   const esc = (s) => String(s ?? "").replace(/[&<>"]/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;" }[c]));
 
   // ------------------------------------------------------------ cuentas
+  // Lo que gana el Yera (su %) sale del dinero de Gabriel y va a su cuenta "Ganancias"
   function saldos(movs) {
-    const s = { CUP: 0, USD: 0, zelleMes: 0, costoMes: 0 };
+    const s = { CUP: 0, USD: 0, zelleMes: 0, costoMes: 0, gan: { USD: 0, CUP: 0 }, ganMes: { USD: 0, CUP: 0 } };
     const mes = hoy().slice(0, 7);
     for (const m of movs) {
-      if (m.tipo === "recibi") s[m.moneda] += m.importe;
-      else if (m.tipo === "pague" || m.tipo === "entregue") s[m.moneda] -= m.importe;
-      else if (m.tipo === "cambio") { s.CUP -= m.cup; s.USD += m.usd; }
-      else if (m.tipo === "zelle") {
-        s.USD -= m.pago_usd || 0; s.CUP -= m.pago_cup || 0;
-        if (m.fecha.slice(0, 7) === mes) { s.zelleMes += m.zelle; s.costoMes += costoZelle(m); }
-      }
+      for (const [k, v] of Object.entries(efecto(m))) s[k] += v;
+      if (m.ganancia) { s.gan[m.gan_moneda] += m.ganancia; if (m.fecha.slice(0, 7) === mes) s.ganMes[m.gan_moneda] += m.ganancia; }
+      if (m.tipo === "zelle" && m.fecha.slice(0, 7) === mes) { s.zelleMes += m.zelle; s.costoMes += costoZelle(m); }
     }
     return s;
+  }
+  // la ganancia del Yera: un % de lo que mueve, cobrada en USD o CUP
+  function calcularGanancia(tipo, base, pct, moneda, tasa) {
+    if (!(pct > 0) || !(base > 0)) return 0;
+    const g = base * pct / 100;                      // en la moneda de la base (Zelle y cambio: USD; envío: su moneda)
+    if (tipo === "pague") return Math.round(g * 100) / 100;
+    return Math.round((moneda === "CUP" ? g * (tasa || 0) : g) * 100) / 100;
   }
   const costoZelle = (m) => (m.pago_usd || 0) + (m.tasa ? (m.pago_cup || 0) / m.tasa : 0);
   function resumenMov(m) {
     switch (m.tipo) {
-      case "zelle": return { t: `Zelle ${m.banco && m.banco !== "Desconocido" ? "· " + m.banco : ""}`, d: m.confirmacion || "sin número", i: `+${dinero(m.zelle)}`, s: "Zelle" };
+      case "zelle": return { t: `Zelle ${m.banco && m.banco !== "Desconocido" ? "· " + m.banco : ""}`, d: [m.mercado_pct ? `a ${m.mercado_pct} %` : "", textoGan(m) || m.confirmacion || "sin número"].filter(Boolean).join(" · "), i: `+${dinero(m.zelle)}`, s: "Zelle" };
       case "recibi": return { t: `Recibí de ${m.de || "—"}`, d: m.nota || "", i: `+${dinero(m.importe)}`, s: m.moneda };
-      case "cambio": return { t: "Cambié CUP a USD", d: `tasa ${dinero(m.cup / m.usd)}`, i: `+${dinero(m.usd)}`, s: `por ${dinero(m.cup, 0)} CUP` };
-      case "pague": return { t: `Pagué a ${m.a || "—"}`, d: m.concepto || "", i: `−${dinero(m.importe)}`, s: m.moneda };
+      case "cambio": return { t: "Cambié CUP a USD", d: [`tasa ${dinero(m.cup / m.usd)}`, textoGan(m)].filter(Boolean).join(" · "), i: `+${dinero(m.usd)}`, s: `por ${dinero(m.cup, 0)} CUP` };
+      case "pague": return { t: `Pagué a ${m.a || "—"}`, d: [m.concepto, textoGan(m)].filter(Boolean).join(" · "), i: `−${dinero(m.importe)}`, s: m.moneda };
       case "entregue": return { t: "Le entregué a Gabriel", d: m.nota || "", i: `−${dinero(m.importe)}`, s: m.moneda };
     }
     return { t: m.tipo, d: "", i: "", s: "" };
   }
+  const textoGan = (m) => m.ganancia ? `gané ${dinero(m.ganancia, m.gan_moneda === "CUP" ? 0 : 2)} ${m.gan_moneda}` : "";
 
   // ------------------------------------------------------------ navegación
   function ir(ruta) { location.hash = ruta; }
@@ -147,13 +152,15 @@
 
   // ------------------------------------------------------------ cuánto mueve cada operación (para saldos y colores)
   function efecto(m) {
+    let e = {};
     switch (m.tipo) {
-      case "recibi": return { [m.moneda]: m.importe };
-      case "pague": case "entregue": return { [m.moneda]: -m.importe };
-      case "cambio": return { CUP: -m.cup, USD: m.usd };
-      case "zelle": { const e = {}; if (m.pago_usd) e.USD = -m.pago_usd; if (m.pago_cup) e.CUP = -m.pago_cup; return e; }
+      case "recibi": e = { [m.moneda]: m.importe }; break;
+      case "pague": case "entregue": e = { [m.moneda]: -m.importe }; break;
+      case "cambio": e = { CUP: -m.cup, USD: m.usd }; break;
+      case "zelle": if (m.pago_usd) e.USD = -m.pago_usd; if (m.pago_cup) e.CUP = -m.pago_cup; break;
     }
-    return {};
+    if (m.ganancia) e[m.gan_moneda] = (e[m.gan_moneda] || 0) - m.ganancia;  // lo que se queda el Yera
+    return e;
   }
   const tono = (m) => m.tipo === "zelle" ? "zelle" : m.tipo === "recibi" ? "entra" : m.tipo === "cambio" ? "cambio" : "sale";
   const DIAS = ["Domingo", "Lunes", "Martes", "Miércoles", "Jueves", "Viernes", "Sábado"];
@@ -191,6 +198,11 @@
           <div><b class="${s.USD < -0.004 ? "neg" : ""}">${dinero(s.USD)}</b><span>USD</span></div></div>
         <p>Zelle del mes <b>${dinero(s.zelleMes)}</b>${s.zelleMes ? ` · costó <b>${pct >= 0 ? "+" : ""}${pct.toFixed(1)} %</b>` : ""}</p>
       </section>
+      <section class="ganancias">
+        <span class="ic entra">${ico("recibi")}</span>
+        <div><small>Ganancias (lo mío)</small><b>${dinero(s.gan.USD)} <i>USD</i></b>${s.gan.CUP ? `<b>${dinero(s.gan.CUP, 0)} <i>CUP</i></b>` : ""}</div>
+        <div class="mes"><small>este mes</small><b>+${dinero(s.ganMes.USD)}</b>${s.ganMes.CUP ? `<b>+${dinero(s.ganMes.CUP, 0)}</b>` : ""}</div>
+      </section>
       <div class="rapidos">
         ${["recibi", "cambio", "pague", "entregue"].map((k) => `<button data-ir="#/nuevo/${k}"><span class="ic ${tono({ tipo: k })}">${ico(TIPOS[k].icono)}</span>${TIPOS[k].corto === "Cambio" ? "Cambié" : TIPOS[k].corto}</button>`).join("")}
       </div>
@@ -220,8 +232,12 @@
     if (finMes === null) finMes = { CUP: 0, USD: 0 };
     const delMes = movs.filter((m) => m.fecha.slice(0, 7) === mes);
     const tot = { CUP: { e: 0, s: 0 }, USD: { e: 0, s: 0 } };
-    let zelle = 0;
-    for (const m of delMes) { for (const [k, v] of Object.entries(efecto(m))) v > 0 ? (tot[k].e += v) : (tot[k].s -= v); if (m.tipo === "zelle") zelle += m.zelle; }
+    let zelle = 0; const ganM = { USD: 0, CUP: 0 };
+    for (const m of delMes) {
+      for (const [k, v] of Object.entries(efecto(m))) v > 0 ? (tot[k].e += v) : (tot[k].s -= v);
+      if (m.tipo === "zelle") zelle += m.zelle;
+      if (m.ganancia) ganM[m.gan_moneda] += m.ganancia;
+    }
     const i = meses.indexOf(mes), ant = meses[i - 1] || null, sig = meses[i + 1] || null;
     const queda = (m) => {
       const d = despues.get(m.id), e = efecto(m);
@@ -239,7 +255,7 @@
           <span class="ent">+${dinero(tot[k].e, k === "CUP" ? 0 : 2)}</span> <span class="sal">−${dinero(tot[k].s, k === "CUP" ? 0 : 2)}</span>
           <em>empezó el mes con ${dinero(inicioMes[k], k === "CUP" ? 0 : 2)}</em></div>`).join("")}
       </div>
-      ${zelle ? `<p class="nota">Zelle comprado en el mes: <b>${dinero(zelle)} USD</b></p>` : ""}
+      ${zelle || ganM.USD || ganM.CUP ? `<p class="nota">${zelle ? `Zelle comprado en el mes: <b>${dinero(zelle)} USD</b>` : ""}${(ganM.USD || ganM.CUP) ? `${zelle ? " · " : ""}mis ganancias: <b>${dinero(ganM.USD)} USD${ganM.CUP ? " · " + dinero(ganM.CUP, 0) + " CUP" : ""}</b>` : ""}</p>` : ""}
       ${dias.length ? dias.map((d) => {
         const c = cierre.get(d.fecha);
         return `<div class="dia-cab"><b>${nombreDia(d.fecha)}</b><span>al cerrar: ${dinero(c.USD)} USD · ${dinero(c.CUP, 0)} CUP</span></div>
@@ -333,15 +349,22 @@
     cabecera(previo ? "Cambiar: " + TIPOS[tipo].corto : TIPOS[tipo].titulo, true);
     const m = previo || { tipo, fecha: hoy() };
     const tasaUlt = (await ajuste("tasa")) || "";
+    const ganUlt = (await ajuste("gan_pct")) || {};
+    const gm = m.gan_moneda || "USD";
+    const GANMON = `<option ${gm === "USD" ? "selected" : ""}>USD</option><option ${gm === "CUP" ? "selected" : ""}>CUP</option>`;
     const dec = 'inputmode="decimal" autocomplete="off"';
     let cuerpo = "";
     if (tipo === "zelle") cuerpo = `
       ${campo("zelle", "Zelle recibido (USD)", m.zelle, dec + ' required placeholder="1050.00"')}
       <div class="dos">${campo("fecha", "Fecha", m.fecha, 'type="date" required')}${campo("banco", "Banco", m.banco, 'placeholder="Bank of America"')}</div>
       ${campo("confirmacion", "N.º de confirmación", m.confirmacion, 'autocapitalize="off" spellcheck="false"')}
+      ${campo("mercado_pct", "El Zelle está a <small>(% que cobra el vendedor)</small>", m.mercado_pct || (await ajuste("mercado_pct")) || "", dec + ' placeholder="5"')}
       <h2>Lo que le pagué al vendedor</h2>
       <div class="dos">${campo("pago_usd", "En USD", m.pago_usd || "", dec + ' placeholder="0"')}${campo("pago_cup", "En CUP", m.pago_cup || "", dec + ' placeholder="0"')}</div>
       ${campo("tasa", "Tasa de los CUP <small>(CUP por 1 USD)</small>", m.tasa || tasaUlt, dec)}
+      <h2>Mi ganancia</h2>
+      <div class="dos">${campo("gan_pct", "Mi % ", m.gan_pct || ganUlt[tipo] || "", dec + ' placeholder="0"')}
+        <label>La cobro en<select name="gan_moneda">${GANMON}</select></label></div>
       <div class="calculo" id="calc"></div>
       ${campo("nota", "Nota <small>(opcional)</small>", m.nota)}`;
     else if (tipo === "recibi") cuerpo = `
@@ -351,13 +374,19 @@
       ${campo("fecha", "Fecha", m.fecha, 'type="date" required')}${campo("nota", "Nota <small>(opcional)</small>", m.nota)}`;
     else if (tipo === "cambio") cuerpo = `
       <div class="dos">${campo("cup", "Entregué CUP", m.cup, dec + " required")}${campo("usd", "Recibí USD", m.usd, dec + " required")}</div>
+      <h2>Mi ganancia</h2>
+      <div class="dos">${campo("gan_pct", "Mi % ", m.gan_pct || ganUlt[tipo] || "", dec + ' placeholder="0"')}
+        <label>La cobro en<select name="gan_moneda">${GANMON}</select></label></div>
       <div class="calculo" id="calc"></div>
       ${campo("fecha", "Fecha", m.fecha, 'type="date" required')}${campo("nota", "¿Con quién? <small>(opcional)</small>", m.nota)}`;
     else if (tipo === "pague") cuerpo = `
       ${campo("a", "¿A quién le pagué?", m.a || "", 'list="personas" required')}
       <div class="dos"><label>Moneda<select name="moneda"><option ${m.moneda === "CUP" ? "selected" : ""}>CUP</option><option ${m.moneda === "USD" ? "selected" : ""}>USD</option></select></label>
       ${campo("importe", "Importe", m.importe, dec + " required")}</div>
-      ${campo("concepto", "¿Por qué?", m.concepto, 'placeholder="Flete, mercancía…"')}${campo("fecha", "Fecha", m.fecha, 'type="date" required')}`;
+      ${campo("concepto", "¿Por qué?", m.concepto, 'placeholder="Flete, mercancía…"')}${campo("fecha", "Fecha", m.fecha, 'type="date" required')}
+      <h2>Mi ganancia por el envío</h2>
+      ${campo("gan_pct", "Mi % <small>(opcional)</small>", m.gan_pct || "", dec + ' placeholder="0"')}
+      <div class="calculo" id="calc"></div>`;
     else if (tipo === "entregue") cuerpo = `
       <div class="dos"><label>Moneda<select name="moneda"><option ${m.moneda === "USD" ? "selected" : ""}>USD</option><option ${m.moneda === "CUP" ? "selected" : ""}>CUP</option></select></label>
       ${campo("importe", "Importe", m.importe, dec + " required")}</div>
@@ -376,19 +405,39 @@
       </form>`;
     const f = $("#f");
     let comp = previo ? { blob: previo.comprobante, sha: previo.sha, huella: previo.huella } : null;
+    const ganTexto = (base, monedaBase, tasaG) => {
+      if (!f.gan_pct) return "";
+      const gp = num(f.gan_pct.value);
+      if (!(gp > 0)) return "";
+      const gmon = tipo === "pague" ? monedaBase : f.gan_moneda.value;
+      if (gmon === "CUP" && tipo !== "pague" && !(tasaG > 0)) return `<br>Para cobrar tu ganancia en CUP falta la tasa.`;
+      const g = calcularGanancia(tipo, base, gp, gmon, tasaG);
+      return `<br>Tu ganancia: <b class="gana">${dinero(g, gmon === "CUP" ? 0 : 2)} ${gmon}</b> (${gp} %) → va a <b>Ganancias</b>`;
+    };
     const calc = () => {
       const el = $("#calc"); if (!el) return;
       if (tipo === "cambio") {
         const c = num(f.cup.value), u = num(f.usd.value);
-        el.innerHTML = c > 0 && u > 0 ? `Tasa del cambio: <b>${dinero(c / u)}</b> CUP por 1 USD` : "Escribe los CUP que diste y los USD que recibiste.";
+        el.innerHTML = c > 0 && u > 0 ? `Tasa del cambio: <b>${dinero(c / u)}</b> CUP por 1 USD` + ganTexto(u, "USD", c / u) : "Escribe los CUP que diste y los USD que recibiste.";
         return;
       }
-      const z = num(f.zelle.value), pu = num(f.pago_usd.value) || 0, pc = num(f.pago_cup.value) || 0, t = num(f.tasa.value);
-      if (!(z > 0) || (!pu && !pc)) { el.innerHTML = "Escribe el Zelle recibido y lo que pagaste (USD, CUP o las dos)."; return; }
-      if (pc && !(t > 0)) { el.innerHTML = "Pagaste en CUP: escribe la tasa para calcular."; return; }
+      if (tipo === "pague") {
+        const imp = num(f.importe.value);
+        el.innerHTML = imp > 0 && num(f.gan_pct.value) > 0 ? ganTexto(imp, f.moneda.value).replace(/^<br>/, "") : "Si cobras por hacer el envío, escribe tu %.";
+        return;
+      }
+      const z = num(f.zelle.value), pu = num(f.pago_usd.value) || 0, pc = num(f.pago_cup.value) || 0, t = num(f.tasa.value), mp = num(f.mercado_pct.value);
+      let h = "";
+      if (z > 0 && mp > 0) {
+        const precio = z * (1 + mp / 100);
+        h += `Al <b>${mp} %</b>, el vendedor cobra <b>${dinero(precio)} USD</b>${t > 0 ? ` o <b>${dinero(precio * t, 0)} CUP</b>` : ""}.<br>`;
+      }
+      if (!(z > 0) || (!pu && !pc)) { el.innerHTML = h + "Escribe lo que le pagaste (USD, CUP o las dos)." + (z > 0 ? ganTexto(z, "USD", t) : ""); return; }
+      if (pc && !(t > 0)) { el.innerHTML = h + "Pagaste en CUP: escribe la tasa para calcular."; return; }
       const costo = pu + (pc ? pc / t : 0), d = costo - z, pct = d / z * 100;
-      el.innerHTML = `Costó <b>${dinero(costo)} USD</b> por <b>${dinero(z)}</b> de Zelle: <b class="${d > 0 ? "pierde" : "gana"}">${d >= 0 ? "+" : ""}${pct.toFixed(2)} %</b>
-        (${d > 0 ? "pagaste " + dinero(d) + " de más" : d < 0 ? "ganaste " + dinero(-d) : "1 por 1"})`;
+      h += `Costó <b>${dinero(costo)} USD</b> por <b>${dinero(z)}</b> de Zelle: <b class="${d > 0 ? "pierde" : "gana"}">${d >= 0 ? "+" : ""}${pct.toFixed(2)} %</b>`;
+      if (mp > 0 && Math.abs(pct - mp) > 0.05) h += ` <small>(el vendedor dijo ${mp} %)</small>`;
+      el.innerHTML = h + ganTexto(z, "USD", t);
     };
     f.addEventListener("input", calc); calc();
 
@@ -446,6 +495,7 @@
         if (!nuevo.pago_usd && !nuevo.pago_cup) err.push("Escribe lo que le pagaste al vendedor (USD, CUP o las dos).");
         if (nuevo.pago_cup && !(nuevo.tasa > 0)) err.push("Pagaste en CUP: escribe la tasa.");
         nuevo.banco = v("banco"); nuevo.confirmacion = v("confirmacion"); nuevo.nota = v("nota");
+        nuevo.mercado_pct = num(v("mercado_pct")) || 0;
         nuevo.cuenta = comp && comp.cuenta || (previo && previo.cuenta) || null;
         if (!comp || !comp.blob) err.push("Sube la captura del Zelle.");
       } else if (tipo === "cambio") {
@@ -456,12 +506,25 @@
         if (tipo === "pague") { nuevo.a = v("a"); nuevo.concepto = v("concepto"); if (!nuevo.a) err.push("Escribe a quién le pagaste."); }
         nuevo.nota = v("nota");
       }
+      // ganancia del Yera
+      const gp = f.gan_pct ? num(v("gan_pct")) : 0;
+      if (gp && (isNaN(gp) || gp < 0 || gp > 50)) err.push("Revisa tu % de ganancia (entre 0 y 50).");
+      else if (gp > 0) {
+        nuevo.gan_pct = gp;
+        nuevo.gan_moneda = tipo === "pague" ? nuevo.moneda : (v("gan_moneda") === "CUP" ? "CUP" : "USD");
+        const base = tipo === "zelle" ? nuevo.zelle : tipo === "cambio" ? nuevo.usd : nuevo.importe;
+        const tasaG = tipo === "cambio" ? (nuevo.usd ? nuevo.cup / nuevo.usd : 0) : nuevo.tasa;
+        if (nuevo.gan_moneda === "CUP" && tipo !== "pague" && !(tasaG > 0)) err.push("Para cobrar tu ganancia en CUP escribe la tasa.");
+        nuevo.ganancia = calcularGanancia(tipo, base, gp, nuevo.gan_moneda, tasaG);
+      }
       if (comp && comp.blob) Object.assign(nuevo, { comprobante: comp.blob, sha: comp.sha, huella: comp.huella });
       const movs = await todos();
       if (!err.length) { const r = await repetido(nuevo, movs); if (r) err.push(r + " No se guardó para no contarlo dos veces."); }
       $("#errores").innerHTML = err.map((x) => `<li class="malo">${esc(x)}</li>`).join("");
       if (err.length) { $("#errores").scrollIntoView({ block: "center" }); return; }
       if (tipo === "zelle" && nuevo.tasa) await ponerAjuste("tasa", nuevo.tasa);
+      if (tipo === "zelle" && nuevo.mercado_pct) await ponerAjuste("mercado_pct", nuevo.mercado_pct);
+      if (nuevo.gan_pct && tipo !== "pague") { const g = (await ajuste("gan_pct")) || {}; g[tipo] = nuevo.gan_pct; await ponerAjuste("gan_pct", g); }
       await guardarMov(nuevo);
       avisar(previo ? "Cambios guardados." : "Guardado.");
       ir("#/");
@@ -479,6 +542,7 @@
       filas.push(["Zelle recibido", dinero(m.zelle) + " USD"], ["Banco", m.banco || "—"], ["N.º de confirmación", m.confirmacion || "—"], ["Cuenta de origen", m.cuenta || "—"],
         ["Pagué en USD", dinero(m.pago_usd || 0)], ["Pagué en CUP", dinero(m.pago_cup || 0, 0) + (m.pago_cup ? ` (tasa ${dinero(m.tasa)})` : "")],
         ["Costó", `${dinero(costo)} USD (${pct >= 0 ? "+" : ""}${pct.toFixed(2)} %)`]);
+      if (m.mercado_pct) filas.push(["El Zelle estaba a", `${m.mercado_pct} %`]);
     } else if (m.tipo === "cambio") filas.push(["Entregué", dinero(m.cup, 0) + " CUP"], ["Recibí", dinero(m.usd) + " USD"], ["Tasa", dinero(m.cup / m.usd)]);
     else {
       if (m.de) filas.push(["De", m.de]);
@@ -486,6 +550,7 @@
       filas.push(["Importe", `${dinero(m.importe)} ${m.moneda}`]);
       if (m.concepto) filas.push(["Por", m.concepto]);
     }
+    if (m.ganancia) filas.push(["Mi ganancia", `${dinero(m.ganancia, m.gan_moneda === "CUP" ? 0 : 2)} ${m.gan_moneda} (${m.gan_pct} %)`]);
     if (m.nota) filas.push(["Nota", m.nota]);
     vista.innerHTML = `<div class="tarjeta detalle"><dl>${filas.map(([a, b]) => `<dt>${esc(a)}</dt><dd>${esc(b)}</dd>`).join("")}</dl>
       ${m.comprobante ? (/pdf/.test(m.comprobante.type) ? `<p class="nota">Comprobante en PDF guardado.</p>` : `<img src="${URL.createObjectURL(m.comprobante)}" alt="Comprobante">`) : `<p class="nota">Sin comprobante.</p>`}

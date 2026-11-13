@@ -123,3 +123,9 @@ body.con-nav .nav { display: grid; }
   .lista, .resumen-mes > div, .mes-sel { border-color: #ccc; break-inside: avoid; }
   .mov { break-inside: avoid; }
 }
+.ganancias { display: flex; align-items: center; gap: 12px; background: #fff; border: 1px solid var(--linea); border-radius: 16px; padding: 12px 14px; margin: -2px 0 12px; }
+.ganancias .ic { width: 40px; height: 40px; border-radius: 13px; display: grid; place-items: center; flex: none; }
+.ganancias small { display: block; color: var(--gris); font-size: 12.5px; }
+.ganancias b { font-size: 16px; font-variant-numeric: tabular-nums; }
+.ganancias .mes { margin-left: auto; text-align: right; } .ganancias .mes b { color: var(--entra); font-size: 14px; }
+.ganancias b { display: block; line-height: 1.3; } .ganancias b i { font-style: normal; font-size: 12px; color: var(--gris); font-weight: 600; }
