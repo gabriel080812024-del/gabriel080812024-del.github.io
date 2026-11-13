@@ -2,7 +2,7 @@
    - Guarda la app en el iPad para que funcione sin internet.
    - Cada pantalla del programa (/, /caja, /registrar/...) se la pide a la página principal,
      que tiene el programa corriendo dentro (Python en el navegador). Nada sale del iPad. */
-const VERSION = "90a76a0292";
+const VERSION = "7ad5fe5e5d";
 const CACHE = "mc-ipad-" + VERSION;
 const ESTILOS = "mc-ipad-est-" + VERSION;  // estilos, scripts e imágenes del programa (se guardan aparte en cada versión)
 const PROPIOS = [
