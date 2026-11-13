@@ -2,7 +2,7 @@
    - Guarda la app en el iPad para que funcione sin internet.
    - Cada pantalla del programa (/, /caja, /registrar/...) se la pide a la página principal,
      que tiene el programa corriendo dentro (Python en el navegador). Nada sale del iPad. */
-const VERSION = "49570f1d8e";
+const VERSION = "2601f8e02b";
 const CACHE = "mc-ipad-" + VERSION;
 const ESTILOS = "mc-ipad-est-" + VERSION;  // estilos, scripts e imágenes del programa (se guardan aparte en cada versión)
 const PROPIOS = [
@@ -42,7 +42,7 @@ async function desdeCache(req) {
 async function ventanas() {
   // Safari no siempre dice cuál es la ventana principal: se pregunta a todas y contesta la que tiene el programa.
   const todas = await self.clients.matchAll({ type: "window", includeUncontrolled: true });
-  return todas.filter((c) => !new URL(c.url).pathname.startsWith("/mi-contabilidad-visor"));
+  return todas.filter((c) => !/^\/(mi-contabilidad-visor|yera)(\/|$)/.test(new URL(c.url).pathname));
 }
 
 function aviso(texto, estado = 503) {
@@ -87,6 +87,7 @@ self.addEventListener("fetch", (e) => {
   if (url.origin !== self.location.origin) return;
   const p = url.pathname;
   if (p.startsWith("/mi-contabilidad-visor")) return;              // el visor del iPhone va por su cuenta
+  if (p === "/yera" || p.startsWith("/yera/")) return;              // la Caja del Yera (Android) también
   if (p.startsWith("/_ipad/") || p === "/sw.js") { e.respondWith(desdeCache(e.request)); return; }
   if (p === "/api/latido" || p === "/api/cerrando") {                                          // el latido de la Mac: aquí no hace falta
     e.respondWith(new Response('{"ok":true}', { headers: { "Content-Type": "application/json" } }));

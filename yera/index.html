@@ -1,0 +1,24 @@
+<!doctype html>
+<html lang="es">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<meta name="theme-color" content="#0f766e">
+<title>Caja del Yera</title>
+<link rel="manifest" href="manifest.webmanifest">
+<link rel="icon" href="icono-192.png">
+<link rel="stylesheet" href="estilo.css">
+</head>
+<body>
+<header class="barra">
+  <button type="button" class="atras" id="atras" hidden aria-label="Atrás"><svg viewBox="0 0 24 24"><path d="M5 12h14M5 12l6 6M5 12l6-6"/></svg></button>
+  <h1 id="titulo">Caja del Yera</h1>
+  <span class="estado" id="estado-red"></span>
+</header>
+<main id="vista"></main>
+<div class="aviso-flotante" id="aviso" hidden></div>
+<script src="lib/ocr/tesseract.min.js"></script>
+<script src="lector.js"></script>
+<script src="app.js"></script>
+</body>
+</html>
