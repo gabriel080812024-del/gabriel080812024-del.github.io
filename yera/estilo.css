@@ -132,3 +132,8 @@ body.con-nav .nav { display: grid; }
 .foto { flex-direction: column; } .foto small { display: block; font-weight: 400; font-size: 13px; color: var(--gris); }
 .quitar-foto { display: block; margin: 8px auto 0; background: none; border: 0; color: var(--rojo); font: 600 14px system-ui, sans-serif; padding: 6px 10px; }
 .detalle .dos .boton { margin-top: 12px; }
+.pregunta { margin-top: 14px; padding: 12px 14px 14px; border-radius: 16px; background: var(--tinte2); border: 1px solid var(--linea); transition: background .3s, border-color .3s; }
+.pregunta > b { font-size: 15px; }
+.pregunta.activa { background: #fff8e6; border-color: #f0c873; box-shadow: 0 0 0 3px #fdefc8; }
+.pregunta .calculo { background: #fff; }
+h2 small { font-weight: 400; color: var(--gris); font-size: 12.5px; }

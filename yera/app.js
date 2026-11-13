@@ -351,6 +351,7 @@
     const tasaUlt = (await ajuste("tasa")) || "";
     const ganUlt = (await ajuste("gan_pct")) || {};
     const gm = m.gan_moneda || "USD";
+    const pagoEn = m.pago_en || (m.pago_cup && m.pago_usd ? "mixto" : m.pago_cup ? "CUP" : "USD");
     const GANMON = `<option ${gm === "USD" ? "selected" : ""}>USD</option><option ${gm === "CUP" ? "selected" : ""}>CUP</option>`;
     const dec = 'inputmode="decimal" autocomplete="off"';
     let cuerpo = "";
@@ -359,14 +360,19 @@
       ${campo("zelle", "Zelle recibido (USD)", m.zelle, dec + ' required placeholder="1050.00"')}
       <div class="dos">${campo("fecha", "Fecha", m.fecha, 'type="date" required')}${campo("banco", "Banco", m.banco, 'placeholder="Bank of America"')}</div>
       ${campo("confirmacion", "N.º de confirmación", m.confirmacion, 'autocapitalize="off" spellcheck="false"')}
-      ${campo("mercado_pct", "El Zelle está a <small>(% que cobra el vendedor)</small>", m.mercado_pct || (await ajuste("mercado_pct")) || "", dec + ' placeholder="5"')}
-      <h2>Lo que le pagué al vendedor</h2>
+      <div class="pregunta" id="pregunta">
+        <b>¿A qué porcentajes?</b>
+        <div class="dos">${campo("mercado_pct", "% del vendedor", m.mercado_pct || (await ajuste("mercado_pct")) || "", dec + ' placeholder="5"')}
+          ${campo("gan_pct", "Tu %", m.gan_pct || ganUlt[tipo] || "", dec + ' placeholder="0"')}</div>
+        <label>¿Cómo le pagas al vendedor?<select name="pago_en">
+          <option value="USD" ${pagoEn === "USD" ? "selected" : ""}>En USD</option><option value="CUP" ${pagoEn === "CUP" ? "selected" : ""}>En CUP</option>
+          <option value="mixto" ${pagoEn === "mixto" ? "selected" : ""}>Parte USD y parte CUP</option></select></label>
+        ${campo("tasa", "Tasa de los CUP <small>(CUP por 1 USD)</small>", m.tasa || tasaUlt, dec)}
+        <div class="calculo" id="calc"></div>
+      </div>
+      <h2>Lo que le pagas al vendedor <small>(se calcula solo; cámbialo si fue distinto)</small></h2>
       <div class="dos">${campo("pago_usd", "En USD", m.pago_usd || "", dec + ' placeholder="0"')}${campo("pago_cup", "En CUP", m.pago_cup || "", dec + ' placeholder="0"')}</div>
-      ${campo("tasa", "Tasa de los CUP <small>(CUP por 1 USD)</small>", m.tasa || tasaUlt, dec)}
-      <h2>Mi ganancia</h2>
-      <div class="dos">${campo("gan_pct", "Mi % ", m.gan_pct || ganUlt[tipo] || "", dec + ' placeholder="0"')}
-        <label>La cobro en<select name="gan_moneda">${GANMON}</select></label></div>
-      <div class="calculo" id="calc"></div>
+      <label>Tu ganancia la cobras en<select name="gan_moneda">${GANMON}</select></label>
       ${campo("nota", "Nota <small>(opcional)</small>", m.nota)}`;
     else if (tipo === "recibi") cuerpo = `
       ${campo("de", "¿De quién?", m.de || "", 'list="personas" required placeholder="Gabriel, JIMMY…"')}
@@ -431,19 +437,45 @@
         el.innerHTML = imp > 0 && num(f.gan_pct.value) > 0 ? ganTexto(imp, f.moneda.value).replace(/^<br>/, "") : "Si cobras por hacer el envío, escribe tu %.";
         return;
       }
+      autoPago();
       const z = num(f.zelle.value), pu = num(f.pago_usd.value) || 0, pc = num(f.pago_cup.value) || 0, t = num(f.tasa.value), mp = num(f.mercado_pct.value);
-      let h = "";
-      if (z > 0 && mp > 0) {
-        const precio = z * (1 + mp / 100);
-        h += `Al <b>${mp} %</b>, el vendedor cobra <b>${dinero(precio)} USD</b>${t > 0 ? ` o <b>${dinero(precio * t, 0)} CUP</b>` : ""}.<br>`;
-      }
-      if (!(z > 0) || (!pu && !pc)) { el.innerHTML = h + "Escribe lo que le pagaste (USD, CUP o las dos)." + (z > 0 ? ganTexto(z, "USD", t) : ""); return; }
-      if (pc && !(t > 0)) { el.innerHTML = h + "Pagaste en CUP: escribe la tasa para calcular."; return; }
-      const costo = pu + (pc ? pc / t : 0), d = costo - z, pct = d / z * 100;
-      h += `Costó <b>${dinero(costo)} USD</b> por <b>${dinero(z)}</b> de Zelle: <b class="${d > 0 ? "pierde" : "gana"}">${d >= 0 ? "+" : ""}${pct.toFixed(2)} %</b>`;
-      if (mp > 0 && Math.abs(pct - mp) > 0.05) h += ` <small>(el vendedor dijo ${mp} %)</small>`;
-      el.innerHTML = h + ganTexto(z, "USD", t);
+      const gp = num(f.gan_pct.value) || 0, gmon = f.gan_moneda.value;
+      if (!(z > 0)) { el.innerHTML = "Primero el Zelle que llegó (lo lee la captura o lo escribes)."; return; }
+      if (!(mp >= 0) || f.mercado_pct.value.trim() === "") { el.innerHTML = "¿A qué % está el Zelle del vendedor? Escríbelo arriba."; return; }
+      if ((f.pago_en.value !== "USD" || gmon === "CUP") && !(t > 0)) { el.innerHTML = "Escribe la tasa de los CUP para calcular."; return; }
+      const precio = z * (1 + mp / 100), gan = calcularGanancia("zelle", z, gp, gmon, t);
+      const costo = pu + (pc ? pc / t : 0), dif = costo - precio;
+      let h = `Al <b>${mp} %</b> el vendedor cobra <b>${dinero(precio)} USD</b>${t > 0 ? ` = <b>${dinero(precio * t, 0)} CUP</b>` : ""}.`;
+      if (pu || pc) h += `<br>Le pagas: <b>${[pu ? dinero(pu) + " USD" : "", pc ? dinero(pc, 0) + " CUP" : ""].filter(Boolean).join(" + ")}</b>${Math.abs(dif) > 0.5 ? ` <span class="pierde">(${dif > 0 ? "+" : "−"}${dinero(Math.abs(dif))} USD de lo calculado)</span>` : ""}`;
+      if (gan) h += `<br>Tu ganancia (${gp} %): <b class="gana">${dinero(gan, gmon === "CUP" ? 0 : 2)} ${gmon}</b> → a <b>Ganancias</b>`;
+      const sale = { USD: pu, CUP: pc }; if (gan) sale[gmon] += gan;
+      h += `<br>Sale de lo de Gabriel: <b>${[sale.USD ? dinero(sale.USD) + " USD" : "", sale.CUP ? dinero(sale.CUP, 0) + " CUP" : ""].filter(Boolean).join(" + ") || "—"}</b>`;
+      el.innerHTML = h;
     };
+    // el pago al vendedor y la moneda de la ganancia se calculan solos hasta que el Yera los cambie a mano
+    let pagoTocado = !!previo, ganMonTocada = !!previo;
+    function autoPago() {
+      if (tipo !== "zelle") return;
+      if (!ganMonTocada) f.gan_moneda.value = f.pago_en.value === "CUP" ? "CUP" : "USD";
+      if (pagoTocado || f.pago_en.value === "mixto") return;
+      const z = num(f.zelle.value), mp = num(f.mercado_pct.value), t = num(f.tasa.value);
+      if (!(z > 0) || f.mercado_pct.value.trim() === "" || !(mp >= 0)) return;
+      const precio = z * (1 + mp / 100);
+      if (f.pago_en.value === "USD") { f.pago_usd.value = precio.toFixed(2); f.pago_cup.value = ""; f.pago_usd.classList.add("leido"); f.pago_cup.classList.remove("leido"); }
+      else if (t > 0) { f.pago_cup.value = String(Math.round(precio * t)); f.pago_usd.value = ""; f.pago_cup.classList.add("leido"); f.pago_usd.classList.remove("leido"); }
+    }
+    function preguntar() {
+      if (tipo !== "zelle") return;
+      const p = $("#pregunta"); p.classList.add("activa");
+      setTimeout(() => { p.scrollIntoView({ behavior: "smooth", block: "center" }); (f.mercado_pct.value ? f.gan_pct : f.mercado_pct).focus(); }, 150);
+    }
+    if (tipo === "zelle") {
+      f.pago_usd.addEventListener("input", () => { pagoTocado = true; f.pago_usd.classList.remove("leido"); });
+      f.pago_cup.addEventListener("input", () => { pagoTocado = true; f.pago_cup.classList.remove("leido"); });
+      f.pago_en.addEventListener("change", () => { pagoTocado = false; });
+      f.gan_moneda.addEventListener("change", () => { ganMonTocada = true; });
+      f.zelle.addEventListener("change", () => { if (num(f.zelle.value) > 0) preguntar(); });
+    }
     f.addEventListener("input", calc); calc();
 
     const alElegir = async (e) => {
@@ -465,6 +497,7 @@
           poner("fecha", r.fecha && r.fecha !== "hoy" ? r.fecha : fechaDe(file.lastModified || Date.now()));
           comp.cuenta = r.cuenta || null; comp.a_nuestra = r.a_nuestra_cuenta;
           if (r.remitente && !f.quien.value) poner("quien", r.remitente);
+          if (r.importe) setTimeout(preguntar, 50);
         } else {
           const t = r.texto || "";
           const cup = /([\d.,]{3,})\s*(cup|mn|pesos)/i.exec(t);
@@ -511,6 +544,7 @@
         if (nuevo.pago_cup && !(nuevo.tasa > 0)) err.push("Pagaste en CUP: escribe la tasa.");
         nuevo.banco = v("banco"); nuevo.confirmacion = v("confirmacion"); nuevo.nota = v("nota");
         nuevo.mercado_pct = num(v("mercado_pct")) || 0;
+        nuevo.pago_en = v("pago_en");
         nuevo.cuenta = comp && comp.cuenta || (previo && previo.cuenta) || null;
         nuevo.quien = v("quien");
         if (!nuevo.quien) err.push("Escribe quién mandó el Zelle (el nombre que te dijeron con la foto).");
