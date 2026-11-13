@@ -161,7 +161,13 @@
 
     paso("Listo");
     const marco = $("marco");
-    marco.src = "/";
+    // si el iPad cerró la app (pasa al minimizarla), se vuelve a la última pantalla
+    let inicio = "/";
+    try {
+      const u = JSON.parse(localStorage.getItem("mc_ultima") || "null");
+      if (u && u.ruta && Date.now() - u.t < 12 * 3600e3 && /^\/(?!entrar|verificar|crear-usuario|restaurar|recuperar|salir|bienvenida|api|static|pdf|_ipad)/.test(u.ruta)) inicio = u.ruta;
+    } catch (e) {}
+    marco.src = inicio;
     // Formularios con archivo (restaurar una copia): Safari no pasa el archivo por el intermediario,
     // así que se le entregan directo al programa desde aquí.
     async function leerArchivo(file) {

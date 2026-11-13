@@ -80,7 +80,7 @@ self.onmessage = (ev) => {
         return;
       }
       if (m.op === "guardar") { puente.guardar(); await guardarEnIpad(); }
-      else if (m.op === "vigilar") { r = !!puente.vigilar(); if (r) await guardarEnIpad(); }
+      else if (m.op === "vigilar") { const v = puente.vigilar(); if (v) await guardarEnIpad(); r = v === 2; }
       else if (m.op === "listo") { r = true; }
       else if (m.op === "python" && self.location.hostname === "localhost") {  // solo pruebas en la Mac
         if (m.archivo) py.FS.writeFile(m.archivo, m.texto);

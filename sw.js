@@ -2,7 +2,7 @@
    - Guarda la app en el iPad para que funcione sin internet.
    - Cada pantalla del programa (/, /caja, /registrar/...) se la pide a la página principal,
      que tiene el programa corriendo dentro (Python en el navegador). Nada sale del iPad. */
-const VERSION = "44c1698202";
+const VERSION = "e3f85cf62a";
 const CACHE = "mc-ipad-" + VERSION;
 const ESTILOS = "mc-ipad-est-" + VERSION;  // estilos, scripts e imágenes del programa (se guardan aparte en cada versión)
 const PROPIOS = [
@@ -88,7 +88,7 @@ self.addEventListener("fetch", (e) => {
   const p = url.pathname;
   if (p.startsWith("/mi-contabilidad-visor")) return;              // el visor del iPhone va por su cuenta
   if (p.startsWith("/_ipad/") || p === "/sw.js") { e.respondWith(desdeCache(e.request)); return; }
-  if (p === "/api/latido") {                                          // el latido de la Mac: aquí no hace falta
+  if (p === "/api/latido" || p === "/api/cerrando") {                                          // el latido de la Mac: aquí no hace falta
     e.respondWith(new Response('{"ok":true}', { headers: { "Content-Type": "application/json" } }));
     return;
   }

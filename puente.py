@@ -27,6 +27,23 @@ if boveda.estado() != "bloqueada":
     db.iniciar()
 cliente = A.app.test_client()
 GUARDAR_CADA = 300
+
+
+def _reanudar():
+    """El iPad cerró la app mientras estaba minimizada: si fue hace menos de 1 hora, se sigue dentro."""
+    import secrets
+    uid = A.reanudar_ipad()
+    if not uid:
+        return False
+    sid = secrets.token_urlsafe(24)
+    A.ACTIVAS[sid] = time.time()
+    with cliente.session_transaction() as s:
+        s["uid"] = uid
+        s["sid"] = sid
+    return True
+
+
+REANUDADA = _reanudar()
 _ultimo_guardado = [time.monotonic()]
 
 
@@ -45,21 +62,25 @@ def guardar():
     """Cifra lo anotado y lo deja listo para guardarse en el iPad."""
     if boveda.abierta():
         boveda.guardar()
+        A.recordar_para_reanudar()
         _ultimo_guardado[0] = time.monotonic()
         return True
     return False
 
 
 def vigilar():
-    """Cada medio minuto: 1 hora sin uso cierra la sesión y cifra; si no, guarda cada 5 minutos.
-    Devuelve True si hay que guardar en el iPad."""
+    """Cada medio minuto y al volver a la app: 1 hora sin uso cierra la sesión y cifra; si no, guarda cada
+    5 minutos y renueva la hora para seguir dentro si el iPad cierra la app.
+    Devuelve 2 si cerró (hay que volver a entrar), 1 si hay que guardar en el iPad, 0 si nada."""
     if not boveda.abierta():
-        return False
+        return 0
     ahora = time.monotonic()
     if ahora - boveda.ULTIMO_USO[0] > A.INACTIVIDAD:
         A.ACTIVAS.clear()
         boveda.cerrar()
-        return True
+        return 2
     if ahora - _ultimo_guardado[0] > GUARDAR_CADA:
-        return guardar()
-    return False
+        guardar()
+        return 1
+    A.recordar_para_reanudar()  # la hora se cuenta desde el último uso
+    return 1
