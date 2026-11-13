@@ -141,6 +141,12 @@
       confirmacion: confirmacion(t, b),
       cuenta: cuentaOrigen(t),
       a_nuestra_cuenta: NUESTRA_CUENTA.test(t),
+      remitente: (() => {
+        const m = /\bhola,?[ \t]+([A-ZÁÉÍÓÚÑ][A-Za-zÁÉÍÓÚÑáéíóúñ]+)(?:[ \t]+([A-ZÁÉÍÓÚÑ][A-Za-zÁÉÍÓÚÑáéíóúñ]+))?/i.exec(t);
+        if (!m) return null;
+        const bonito = (w) => w.charAt(0).toUpperCase() + w.slice(1).toLowerCase();
+        return [m[1], m[2]].filter((w) => w && !/^(usted|you|te|le)$/i.test(w)).map(bonito).join(" ") || null;
+      })(),
       avisos: [],
     };
     if (/pendiente|pending|programad|scheduled|cancelad|canceled|failed|fall[oó]/i.test(t)) r.avisos.push("El comprobante dice pendiente, programado o cancelado: revísalo.");

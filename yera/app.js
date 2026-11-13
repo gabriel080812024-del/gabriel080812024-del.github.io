@@ -103,7 +103,7 @@
   const costoZelle = (m) => (m.pago_usd || 0) + (m.tasa ? (m.pago_cup || 0) / m.tasa : 0);
   function resumenMov(m) {
     switch (m.tipo) {
-      case "zelle": return { t: `Zelle ${m.banco && m.banco !== "Desconocido" ? "· " + m.banco : ""}`, d: [m.mercado_pct ? `a ${m.mercado_pct} %` : "", textoGan(m) || m.confirmacion || "sin número"].filter(Boolean).join(" · "), i: `+${dinero(m.zelle)}`, s: "Zelle" };
+      case "zelle": return { t: m.quien ? `Zelle de ${m.quien}` : `Zelle ${m.banco && m.banco !== "Desconocido" ? "· " + m.banco : ""}`, d: [m.mercado_pct ? `a ${m.mercado_pct} %` : "", textoGan(m) || m.confirmacion || "sin número"].filter(Boolean).join(" · "), i: `+${dinero(m.zelle)}`, s: "Zelle" };
       case "recibi": return { t: `Recibí de ${m.de || "—"}`, d: m.nota || "", i: `+${dinero(m.importe)}`, s: m.moneda };
       case "cambio": return { t: "Cambié CUP a USD", d: [`tasa ${dinero(m.cup / m.usd)}`, textoGan(m)].filter(Boolean).join(" · "), i: `+${dinero(m.usd)}`, s: `por ${dinero(m.cup, 0)} CUP` };
       case "pague": return { t: `Pagué a ${m.a || "—"}`, d: [m.concepto, textoGan(m)].filter(Boolean).join(" · "), i: `−${dinero(m.importe)}`, s: m.moneda };
@@ -355,6 +355,7 @@
     const dec = 'inputmode="decimal" autocomplete="off"';
     let cuerpo = "";
     if (tipo === "zelle") cuerpo = `
+      ${campo("quien", "¿Quién mandó el Zelle? <small>(el nombre que viene con la foto)</small>", m.quien || "", 'list="remitentes" required autocomplete="off" placeholder="Nombre"')}
       ${campo("zelle", "Zelle recibido (USD)", m.zelle, dec + ' required placeholder="1050.00"')}
       <div class="dos">${campo("fecha", "Fecha", m.fecha, 'type="date" required')}${campo("banco", "Banco", m.banco, 'placeholder="Bank of America"')}</div>
       ${campo("confirmacion", "N.º de confirmación", m.confirmacion, 'autocapitalize="off" spellcheck="false"')}
@@ -391,14 +392,18 @@
       <div class="dos"><label>Moneda<select name="moneda"><option ${m.moneda === "USD" ? "selected" : ""}>USD</option><option ${m.moneda === "CUP" ? "selected" : ""}>CUP</option></select></label>
       ${campo("importe", "Importe", m.importe, dec + " required")}</div>
       ${campo("fecha", "Fecha", m.fecha, 'type="date" required')}${campo("nota", "Nota <small>(opcional)</small>", m.nota)}`;
-    const personas = [...new Set((await todos()).flatMap((x) => [x.de, x.a]).filter(Boolean))];
+    const lista = await todos();
+    const personas = [...new Set(lista.flatMap((x) => [x.de, x.a]).filter(Boolean))];
+    const remitentes = [...new Set(lista.map((x) => x.quien).filter(Boolean))];
     vista.innerHTML = `
       <form class="tarjeta" id="f" novalidate>
-        <label class="foto" id="foto">${m.comprobante ? `<img src="${URL.createObjectURL(m.comprobante)}" alt="Comprobante">` : ico("camara") + (tipo === "zelle" ? "Subir la captura del Zelle" : "Subir comprobante (opcional)")}
-          <input type="file" accept="image/*,application/pdf" id="archivo" hidden></label>
+        <label class="foto" id="foto" for="archivo">${m.comprobante ? `<img src="${URL.createObjectURL(m.comprobante)}" alt="Comprobante">` : ico("camara") + (tipo === "zelle" ? "Subir la captura del Zelle<small>o escribe los datos a mano abajo</small>" : "Subir comprobante (opcional)")}</label>
+        <input type="file" accept="image/*,application/pdf" id="archivo" hidden>
+        <button type="button" class="quitar-foto" id="quitar-foto" ${m.comprobante ? "" : "hidden"}>Quitar la foto</button>
         <div id="lectura"></div>
         ${cuerpo}
         <datalist id="personas">${personas.map((p) => `<option value="${esc(p)}">`).join("")}</datalist>
+        <datalist id="remitentes">${remitentes.map((p) => `<option value="${esc(p)}">`).join("")}</datalist>
         <ul class="avisos" id="errores"></ul>
         <button class="boton" type="submit">${previo ? "Guardar cambios" : "Guardar"}</button>
         ${previo ? `<button class="boton peligro" type="button" id="borrar">${ico("papelera")} Borrar</button>` : ""}
@@ -441,7 +446,7 @@
     };
     f.addEventListener("input", calc); calc();
 
-    $("#archivo").onchange = async (e) => {
+    const alElegir = async (e) => {
       const file = e.target.files[0]; if (!file) return;
       const lectura = $("#lectura");
       if (/pdf/i.test(file.type)) { lectura.innerHTML = `<p class="nota">PDF guardado. Escribe los datos a mano (la lectura de PDF llega en la próxima versión).</p>`; comp = { blob: file, sha: await sha256(file), huella: null }; return; }
@@ -459,6 +464,7 @@
           poner("confirmacion", r.confirmacion);
           poner("fecha", r.fecha && r.fecha !== "hoy" ? r.fecha : fechaDe(file.lastModified || Date.now()));
           comp.cuenta = r.cuenta || null; comp.a_nuestra = r.a_nuestra_cuenta;
+          if (r.remitente && !f.quien.value) poner("quien", r.remitente);
         } else {
           const t = r.texto || "";
           const cup = /([\d.,]{3,})\s*(cup|mn|pesos)/i.exec(t);
@@ -473,8 +479,17 @@
         console.error(err);
         lectura.innerHTML = `<ul class="avisos"><li>No se pudo leer la captura: escribe los datos a mano.</li></ul>`;
       }
+      $("#quitar-foto").hidden = false;
     };
+    $("#archivo").onchange = alElegir;
 
+    $("#quitar-foto").onclick = () => {
+      if (!confirm("¿Quitar la foto de este movimiento?")) return;
+      comp = null;
+      $("#foto").innerHTML = ico("camara") + "Subir otra foto";
+      $("#archivo").value = "";
+      $("#quitar-foto").hidden = true; $("#lectura").innerHTML = "";
+    };
     if (previo) $("#borrar").onclick = async () => {
       if (!confirm("¿Borrar este movimiento? No se puede deshacer.")) return;
       await borrarMov(previo.id); avisar("Borrado."); ir("#/");
@@ -497,7 +512,8 @@
         nuevo.banco = v("banco"); nuevo.confirmacion = v("confirmacion"); nuevo.nota = v("nota");
         nuevo.mercado_pct = num(v("mercado_pct")) || 0;
         nuevo.cuenta = comp && comp.cuenta || (previo && previo.cuenta) || null;
-        if (!comp || !comp.blob) err.push("Sube la captura del Zelle.");
+        nuevo.quien = v("quien");
+        if (!nuevo.quien) err.push("Escribe quién mandó el Zelle (el nombre que te dijeron con la foto).");
       } else if (tipo === "cambio") {
         nuevo.cup = positivo("cup", "los CUP que diste"); nuevo.usd = positivo("usd", "los USD que recibiste"); nuevo.nota = v("nota");
       } else {
@@ -518,6 +534,7 @@
         nuevo.ganancia = calcularGanancia(tipo, base, gp, nuevo.gan_moneda, tasaG);
       }
       if (comp && comp.blob) Object.assign(nuevo, { comprobante: comp.blob, sha: comp.sha, huella: comp.huella });
+      if (tipo === "zelle" && !nuevo.comprobante && !nuevo.confirmacion) nuevo.manual = true;
       const movs = await todos();
       if (!err.length) { const r = await repetido(nuevo, movs); if (r) err.push(r + " No se guardó para no contarlo dos veces."); }
       $("#errores").innerHTML = err.map((x) => `<li class="malo">${esc(x)}</li>`).join("");
@@ -539,7 +556,7 @@
     const filas = [["Fecha", fFecha(m.fecha)]];
     if (m.tipo === "zelle") {
       const costo = costoZelle(m), pct = (costo / m.zelle - 1) * 100;
-      filas.push(["Zelle recibido", dinero(m.zelle) + " USD"], ["Banco", m.banco || "—"], ["N.º de confirmación", m.confirmacion || "—"], ["Cuenta de origen", m.cuenta || "—"],
+      filas.push(["Lo mandó", m.quien || "—"], ["Zelle recibido", dinero(m.zelle) + " USD"], ["Banco", m.banco || "—"], ["N.º de confirmación", m.confirmacion || "—"], ["Cuenta de origen", m.cuenta || "—"],
         ["Pagué en USD", dinero(m.pago_usd || 0)], ["Pagué en CUP", dinero(m.pago_cup || 0, 0) + (m.pago_cup ? ` (tasa ${dinero(m.tasa)})` : "")],
         ["Costó", `${dinero(costo)} USD (${pct >= 0 ? "+" : ""}${pct.toFixed(2)} %)`]);
       if (m.mercado_pct) filas.push(["El Zelle estaba a", `${m.mercado_pct} %`]);
@@ -554,8 +571,12 @@
     if (m.nota) filas.push(["Nota", m.nota]);
     vista.innerHTML = `<div class="tarjeta detalle"><dl>${filas.map(([a, b]) => `<dt>${esc(a)}</dt><dd>${esc(b)}</dd>`).join("")}</dl>
       ${m.comprobante ? (/pdf/.test(m.comprobante.type) ? `<p class="nota">Comprobante en PDF guardado.</p>` : `<img src="${URL.createObjectURL(m.comprobante)}" alt="Comprobante">`) : `<p class="nota">Sin comprobante.</p>`}
-      <button class="boton sec" id="editar">Cambiar o borrar</button></div>`;
+      <div class="dos"><button class="boton sec" id="editar">Modificar</button><button class="boton peligro" id="eliminar">${ico("papelera")} Eliminar</button></div></div>`;
     $("#editar").onclick = () => ir("#/editar/" + m.id);
+    $("#eliminar").onclick = async () => {
+      if (!confirm("¿Eliminar este movimiento? No se puede deshacer.")) return;
+      await borrarMov(m.id); avisar("Eliminado."); ir("#/");
+    };
   }
 
   // ------------------------------------------------------------ mandar a Gabriel y copia de seguridad (archivo cifrado)
