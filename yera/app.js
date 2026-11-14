@@ -204,7 +204,7 @@
         <small>Tengo de Gabriel</small>
         <div class="saldo-dos"><div><b class="${s.CUP < -0.004 ? "neg" : ""}">${dinero(s.CUP, 0)}</b><span>CUP</span></div>
           <div><b class="${s.USD < -0.004 ? "neg" : ""}">${dinero(s.USD)}</b><span>USD</span></div></div>
-        <p>Zelle del mes <b>${dinero(s.zelleMes)}</b>${s.zelleMes ? ` · costó <b>${pct >= 0 ? "+" : ""}${pct.toFixed(1)} %</b>` : ""}</p>
+        <p>Zelle del mes <b>${dinero(s.zelleMes)}</b>${s.zelleMes ? ` · ${pct >= 0 ? `costó <b>+${pct.toFixed(1)} %</b>` : `salió <b>${Math.abs(pct).toFixed(1)} % a favor</b>`}` : ""}</p>
       </section>
       <section class="ganancias">
         <span class="ic entra">${ico("recibi")}</span>
@@ -241,10 +241,10 @@
     if (finMes === null) finMes = { CUP: 0, USD: 0 };
     const delMes = movs.filter((m) => m.fecha.slice(0, 7) === mes);
     const tot = { CUP: { e: 0, s: 0 }, USD: { e: 0, s: 0 } };
-    let zelle = 0, pctPagado = 0; const ganM = { USD: 0, CUP: 0 };
+    let zelle = 0, pctPagado = 0, pctFavor = 0; const ganM = { USD: 0, CUP: 0 };
     for (const m of delMes) {
       for (const [k, v] of Object.entries(efecto(m))) v > 0 ? (tot[k].e += v) : (tot[k].s -= v);
-      if (m.tipo === "zelle") { zelle += m.zelle; pctPagado += precioZelle(m.zelle || 0, m.mercado_pct || 0) - (m.zelle || 0); }
+      if (m.tipo === "zelle") { zelle += m.zelle; const d = precioZelle(m.zelle || 0, m.mercado_pct || 0) - (m.zelle || 0); if (d >= 0) pctPagado += d; else pctFavor -= d; }
       if (m.ganancia) ganM[m.gan_moneda] += m.ganancia;
     }
     const i = meses.indexOf(mes), ant = meses[i - 1] || null, sig = meses[i + 1] || null;
@@ -271,7 +271,8 @@
           <div class="lista">${d.movs.map((m) => filaMov(m, m.tipo === "cambio" ? `tasa ${dinero(m.cup / m.usd)}` : queda(m))).join("")}</div>`;
       }).join("") : `<div class="lista"><div class="vacio">No hay operaciones en este mes.</div></div>`}
       ${zelle || ganM.USD || ganM.CUP ? `<div class="totales-mes">
-        <div><small>${pctPagado < 0 ? "Total % a favor de Gabriel" : "Total % pagado al vendedor"}</small><b>${dinero(Math.abs(pctPagado))} USD</b></div>
+        ${pctPagado || !pctFavor ? `<div><small>Total % pagado al vendedor</small><b>${dinero(pctPagado)} USD</b></div>` : ""}
+        ${pctFavor ? `<div><small>Total % a favor de Gabriel</small><b>${dinero(pctFavor)} USD</b></div>` : ""}
         <div><small>Total ganancia del Yera</small><b>${dinero(ganM.USD)} USD${ganM.CUP ? `<br>${dinero(ganM.CUP, 0)} CUP` : ""}</b></div>
       </div>` : ""}
       ${delMes.length ? `<button class="boton sec no-imprimir" id="pdf">${ico("compartir")} Guardar o mandar en PDF</button>` : ""}`;
