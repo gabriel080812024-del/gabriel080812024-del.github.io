@@ -108,9 +108,11 @@ body.con-nav .nav { display: grid; }
 .mes-sel b { text-transform: capitalize; font-size: 16px; }
 .mes-sel button { width: 42px; height: 42px; border-radius: 12px; border: 0; background: var(--tinte2); color: var(--verde-osc); display: grid; place-items: center; }
 .mes-sel button:disabled { opacity: .35; }
-.resumen-mes { display: grid; grid-template-columns: 1fr 1fr; gap: 10px; }
-.resumen-mes > div { background: #fff; border: 1px solid var(--linea); border-radius: 16px; padding: 12px; }
-.resumen-mes small { color: var(--gris); font-size: 12.5px; display: block; }
+.resumen-mes, .totales-mes { display: grid; grid-template-columns: 1fr 1fr; gap: 10px; }
+.resumen-mes > div, .totales-mes > div { background: #fff; border: 1px solid var(--linea); border-radius: 16px; padding: 12px; }
+.resumen-mes small, .totales-mes small { color: var(--gris); font-size: 12.5px; display: block; }
+.totales-mes { margin-top: 14px; }
+.totales-mes b { font-size: 17px; display: block; font-variant-numeric: tabular-nums; margin-top: 2px; }
 .resumen-mes b { font-size: 20px; display: block; font-variant-numeric: tabular-nums; margin: 2px 0 4px; }
 .resumen-mes span { font-size: 12.5px; font-weight: 600; }
 .resumen-mes em { display: block; font-style: normal; font-size: 11.5px; color: var(--gris); margin-top: 4px; }
@@ -120,7 +122,7 @@ body.con-nav .nav { display: grid; }
 @media print {
   .barra, .nav, .no-imprimir, .aviso-flotante, .mes-sel button { display: none !important; }
   body { background: #fff; } main { padding: 0; max-width: none; }
-  .lista, .resumen-mes > div, .mes-sel { border-color: #ccc; break-inside: avoid; }
+  .lista, .resumen-mes > div, .totales-mes > div, .mes-sel { border-color: #ccc; break-inside: avoid; }
   .mov { break-inside: avoid; }
 }
 .ganancias { display: flex; align-items: center; gap: 12px; background: #fff; border: 1px solid var(--linea); border-radius: 16px; padding: 12px 14px; margin: -2px 0 12px; }

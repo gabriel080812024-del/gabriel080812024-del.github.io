@@ -232,10 +232,10 @@
     if (finMes === null) finMes = { CUP: 0, USD: 0 };
     const delMes = movs.filter((m) => m.fecha.slice(0, 7) === mes);
     const tot = { CUP: { e: 0, s: 0 }, USD: { e: 0, s: 0 } };
-    let zelle = 0; const ganM = { USD: 0, CUP: 0 };
+    let zelle = 0, pctPagado = 0; const ganM = { USD: 0, CUP: 0 };
     for (const m of delMes) {
       for (const [k, v] of Object.entries(efecto(m))) v > 0 ? (tot[k].e += v) : (tot[k].s -= v);
-      if (m.tipo === "zelle") zelle += m.zelle;
+      if (m.tipo === "zelle") { zelle += m.zelle; pctPagado += (m.zelle || 0) * (m.mercado_pct || 0) / 100; }
       if (m.ganancia) ganM[m.gan_moneda] += m.ganancia;
     }
     const i = meses.indexOf(mes), ant = meses[i - 1] || null, sig = meses[i + 1] || null;
@@ -261,6 +261,10 @@
         return `<div class="dia-cab"><b>${nombreDia(d.fecha)}</b><span>al cerrar: ${dinero(c.USD)} USD · ${dinero(c.CUP, 0)} CUP</span></div>
           <div class="lista">${d.movs.map((m) => filaMov(m, m.tipo === "cambio" ? `tasa ${dinero(m.cup / m.usd)}` : queda(m))).join("")}</div>`;
       }).join("") : `<div class="lista"><div class="vacio">No hay operaciones en este mes.</div></div>`}
+      ${zelle || ganM.USD || ganM.CUP ? `<div class="totales-mes">
+        <div><small>Total % pagado al vendedor</small><b>${dinero(pctPagado)} USD</b></div>
+        <div><small>Total ganancia del Yera</small><b>${dinero(ganM.USD)} USD${ganM.CUP ? `<br>${dinero(ganM.CUP, 0)} CUP` : ""}</b></div>
+      </div>` : ""}
       ${delMes.length ? `<button class="boton sec no-imprimir" id="pdf">${ico("compartir")} Guardar o mandar en PDF</button>` : ""}`;
     vista.querySelectorAll("[data-ir]").forEach((b) => (b.onclick = () => ir(b.dataset.ir)));
     const pdf = $("#pdf");
