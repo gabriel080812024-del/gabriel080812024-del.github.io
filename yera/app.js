@@ -28,7 +28,7 @@
   const TIPOS = {
     zelle: { titulo: "Compré Zelle", corto: "Zelle", icono: "zelle" },
     recibi: { titulo: "Recibí dinero", corto: "Recibí", icono: "recibi" },
-    cambio: { titulo: "Cambié CUP a USD", corto: "Cambio", icono: "cambio" },
+    cambio: { titulo: "Cambio de moneda", corto: "Cambio", icono: "cambio" },
     pague: { titulo: "Pagué a alguien", corto: "Pagué", icono: "pague" },
     entregue: { titulo: "Le entregué a Gabriel", corto: "Entregué", icono: "entregue" },
   };
@@ -72,7 +72,7 @@
   const dinero = (v, dec = 2) => { v = Math.round((v || 0) * 10 ** dec) / 10 ** dec; return (v < 0 ? "−" : "") + Math.abs(v).toLocaleString("en-US", { minimumFractionDigits: dec, maximumFractionDigits: dec }); };
   const fFecha = (f) => (f ? `${f.slice(8, 10)}/${f.slice(5, 7)}/${f.slice(0, 4)}` : "");
   function num(s) {
-    s = String(s ?? "").trim().replace(/\s|\$/g, "");
+    s = String(s ?? "").trim().replace(/\s|\$/g, "").replace(/[−–]/g, "-");
     if (!s) return 0;
     if (s.includes(",") && s.includes(".")) s = s.lastIndexOf(".") > s.lastIndexOf(",") ? s.replace(/,/g, "") : s.replace(/\./g, "").replace(",", ".");
     else if (s.includes(",")) s = /,\d{1,2}$/.test(s) ? s.replace(",", ".") : s.replace(/,/g, "");
@@ -101,17 +101,22 @@
     if (tipo === "pague") return Math.round(g * 100) / 100;
     return Math.round((moneda === "CUP" ? g * (tasa || 0) : g) * 100) / 100;
   }
+  // lo que cobra el vendedor por un Zelle: +5 % → 100 de Zelle cuesta 105; −2 % (a favor) → doy 100 y me pasa 102
+  const precioZelle = (z, mp) => (mp >= 0 ? z * (1 + mp / 100) : z / (1 - mp / 100));
   const costoZelle = (m) => (m.pago_usd || 0) + (m.tasa ? (m.pago_cup || 0) / m.tasa : 0);
   function resumenMov(m) {
     switch (m.tipo) {
-      case "zelle": return { t: m.quien ? `Zelle de ${m.quien}` : `Zelle ${m.banco && m.banco !== "Desconocido" ? "· " + m.banco : ""}`, d: [m.mercado_pct ? `a ${m.mercado_pct} %` : "", textoGan(m) || m.confirmacion || "sin número"].filter(Boolean).join(" · "), i: `+${dinero(m.zelle)}`, s: "Zelle" };
+      case "zelle": return { t: m.quien ? `Zelle de ${m.quien}` : `Zelle ${m.banco && m.banco !== "Desconocido" ? "· " + m.banco : ""}`, d: [m.mercado_pct ? `a ${fPct(m.mercado_pct)}${m.mercado_pct < 0 ? " (a favor)" : ""}` : "", textoGan(m) || m.confirmacion || "sin número"].filter(Boolean).join(" · "), i: `+${dinero(m.zelle)}`, s: "Zelle" };
       case "recibi": return { t: `Recibí de ${m.de || "—"}`, d: m.nota || "", i: `+${dinero(m.importe)}`, s: m.moneda };
-      case "cambio": return { t: "Cambié CUP a USD", d: [`tasa ${dinero(m.cup / m.usd)}`, textoGan(m)].filter(Boolean).join(" · "), i: `+${dinero(m.usd)}`, s: `por ${dinero(m.cup, 0)} CUP` };
+      case "cambio": return m.dir === "usd_cup"
+        ? { t: "Cambié USD a CUP", d: [`tasa ${dinero(m.cup / m.usd)}`, textoGan(m)].filter(Boolean).join(" · "), i: `+${dinero(m.cup, 0)}`, s: `CUP por ${dinero(m.usd)} USD` }
+        : { t: "Cambié CUP a USD", d: [`tasa ${dinero(m.cup / m.usd)}`, textoGan(m)].filter(Boolean).join(" · "), i: `+${dinero(m.usd)}`, s: `USD por ${dinero(m.cup, 0)} CUP` };
       case "pague": return { t: `Pagué a ${m.a || "—"}`, d: [m.concepto, textoGan(m)].filter(Boolean).join(" · "), i: `−${dinero(m.importe)}`, s: m.moneda };
       case "entregue": return { t: "Le entregué a Gabriel", d: m.nota || "", i: `−${dinero(m.importe)}`, s: m.moneda };
     }
     return { t: m.tipo, d: "", i: "", s: "" };
   }
+  const fPct = (p) => `${p < 0 ? "−" : ""}${Math.abs(p)} %`;
   const textoGan = (m) => m.ganancia ? `gané ${dinero(m.ganancia, m.gan_moneda === "CUP" ? 0 : 2)} ${m.gan_moneda}` : "";
 
   // ------------------------------------------------------------ navegación
@@ -157,7 +162,7 @@
     switch (m.tipo) {
       case "recibi": e = { [m.moneda]: m.importe }; break;
       case "pague": case "entregue": e = { [m.moneda]: -m.importe }; break;
-      case "cambio": e = { CUP: -m.cup, USD: m.usd }; break;
+      case "cambio": e = m.dir === "usd_cup" ? { USD: -m.usd, CUP: m.cup } : { CUP: -m.cup, USD: m.usd }; break;
       case "zelle": if (m.pago_usd) e.USD = -m.pago_usd; if (m.pago_cup) e.CUP = -m.pago_cup; break;
     }
     if (m.ganancia) e[m.gan_moneda] = (e[m.gan_moneda] || 0) - m.ganancia;  // lo que se queda el Yera
@@ -239,7 +244,7 @@
     let zelle = 0, pctPagado = 0; const ganM = { USD: 0, CUP: 0 };
     for (const m of delMes) {
       for (const [k, v] of Object.entries(efecto(m))) v > 0 ? (tot[k].e += v) : (tot[k].s -= v);
-      if (m.tipo === "zelle") { zelle += m.zelle; pctPagado += (m.zelle || 0) * (m.mercado_pct || 0) / 100; }
+      if (m.tipo === "zelle") { zelle += m.zelle; pctPagado += precioZelle(m.zelle || 0, m.mercado_pct || 0) - (m.zelle || 0); }
       if (m.ganancia) ganM[m.gan_moneda] += m.ganancia;
     }
     const i = meses.indexOf(mes), ant = meses[i - 1] || null, sig = meses[i + 1] || null;
@@ -266,7 +271,7 @@
           <div class="lista">${d.movs.map((m) => filaMov(m, m.tipo === "cambio" ? `tasa ${dinero(m.cup / m.usd)}` : queda(m))).join("")}</div>`;
       }).join("") : `<div class="lista"><div class="vacio">No hay operaciones en este mes.</div></div>`}
       ${zelle || ganM.USD || ganM.CUP ? `<div class="totales-mes">
-        <div><small>Total % pagado al vendedor</small><b>${dinero(pctPagado)} USD</b></div>
+        <div><small>${pctPagado < 0 ? "Total % a favor de Gabriel" : "Total % pagado al vendedor"}</small><b>${dinero(Math.abs(pctPagado))} USD</b></div>
         <div><small>Total ganancia del Yera</small><b>${dinero(ganM.USD)} USD${ganM.CUP ? `<br>${dinero(ganM.CUP, 0)} CUP` : ""}</b></div>
       </div>` : ""}
       ${delMes.length ? `<button class="boton sec no-imprimir" id="pdf">${ico("compartir")} Guardar o mandar en PDF</button>` : ""}`;
@@ -382,7 +387,11 @@
       ${campo("confirmacion", "N.º de confirmación", m.confirmacion, 'autocapitalize="off" spellcheck="false"')}
       <div class="pregunta" id="pregunta">
         <b>¿A qué porcentajes?</b>
-        <div class="dos">${campo("mercado_pct", "% del vendedor", m.mercado_pct || (await ajuste("mercado_pct")) || "", dec + ' placeholder="ej. 5"')}
+        ${await (async () => { const mp0 = m.mercado_pct ?? (await ajuste("mercado_pct")) ?? ""; const neg = mp0 !== "" && mp0 < 0; return `
+        <label>El Zelle del vendedor está<select name="mp_signo">
+          <option value="1" ${neg ? "" : "selected"}>Más caro (cobra el vendedor)</option>
+          <option value="-1" ${neg ? "selected" : ""}>Más barato (a favor de Gabriel)</option></select></label>
+        <div class="dos">${campo("mercado_pct", "% del vendedor", mp0 === "" ? "" : Math.abs(mp0), dec + ' placeholder="ej. 5"')}`; })()}
           ${campo("gan_pct", "Tu %", m.gan_pct || ganUlt[tipo] || "", dec + ' placeholder="ej. 1"')}</div>
         <label>¿Cómo le pagas al vendedor?<select name="pago_en">
           <option value="USD" ${pagoEn === "USD" ? "selected" : ""}>En USD</option><option value="CUP" ${pagoEn === "CUP" ? "selected" : ""}>En CUP</option>
@@ -400,7 +409,10 @@
       ${campo("importe", "Importe", m.importe, dec + " required")}</div>
       ${campo("fecha", "Fecha", m.fecha, 'type="date" required')}${campo("nota", "Nota <small>(opcional)</small>", m.nota)}`;
     else if (tipo === "cambio") cuerpo = `
-      <div class="dos">${campo("cup", "Entregué CUP", m.cup, dec + " required")}${campo("usd", "Recibí USD", m.usd, dec + " required")}</div>
+      <label>¿Qué cambiaste?<select name="dir">
+        <option value="cup_usd" ${m.dir === "usd_cup" ? "" : "selected"}>Di CUP y recibí USD</option>
+        <option value="usd_cup" ${m.dir === "usd_cup" ? "selected" : ""}>Di USD y recibí CUP</option></select></label>
+      <div class="dos">${campo("cup", `<span id="et-cup">${m.dir === "usd_cup" ? "Recibí" : "Entregué"}</span> CUP`, m.cup, dec + " required")}${campo("usd", `<span id="et-usd">${m.dir === "usd_cup" ? "Entregué" : "Recibí"}</span> USD`, m.usd, dec + " required")}</div>
       <h2>Mi ganancia</h2>
       <div class="dos">${campo("gan_pct", "Mi % ", m.gan_pct || ganUlt[tipo] || "", dec + ' placeholder="ej. 1"')}
         <label>La cobro en<select name="gan_moneda">${GANMON}</select></label></div>
@@ -445,11 +457,14 @@
       const g = calcularGanancia(tipo, base, gp, gmon, tasaG);
       return `<br>Tu ganancia: <b class="gana">${dinero(g, gmon === "CUP" ? 0 : 2)} ${gmon}</b> (${gp} %) → va a <b>Ganancias</b>`;
     };
+    const mpFirmado = () => { if (!f.mercado_pct || f.mercado_pct.value.trim() === "") return NaN; const x = num(f.mercado_pct.value); return x < 0 ? x : x * (+f.mp_signo.value || 1); };
     const calc = () => {
       const el = $("#calc"); if (!el) return;
       if (tipo === "cambio") {
+        const inv = f.dir.value === "usd_cup";
+        $("#et-cup").textContent = inv ? "Recibí" : "Entregué"; $("#et-usd").textContent = inv ? "Entregué" : "Recibí";
         const c = num(f.cup.value), u = num(f.usd.value);
-        el.innerHTML = c > 0 && u > 0 ? `Tasa del cambio: <b>${dinero(c / u)}</b> CUP por 1 USD` + ganTexto(u, "USD", c / u) : "Escribe los CUP que diste y los USD que recibiste.";
+        el.innerHTML = c > 0 && u > 0 ? `Tasa del cambio: <b>${dinero(c / u)}</b> CUP por 1 USD` + ganTexto(u, "USD", c / u) : (inv ? "Escribe los USD que diste y los CUP que recibiste." : "Escribe los CUP que diste y los USD que recibiste.");
         return;
       }
       if (tipo === "pague") {
@@ -458,14 +473,14 @@
         return;
       }
       autoPago();
-      const z = num(f.zelle.value), pu = num(f.pago_usd.value) || 0, pc = num(f.pago_cup.value) || 0, t = num(f.tasa.value), mp = num(f.mercado_pct.value);
+      const z = num(f.zelle.value), pu = num(f.pago_usd.value) || 0, pc = num(f.pago_cup.value) || 0, t = num(f.tasa.value), mp = mpFirmado();
       const gp = num(f.gan_pct.value) || 0, gmon = f.gan_moneda.value;
       if (!(z > 0)) { el.innerHTML = "Primero el Zelle que llegó (lo lee la captura o lo escribes)."; return; }
-      if (!(mp >= 0) || f.mercado_pct.value.trim() === "") { el.innerHTML = "¿A qué % está el Zelle del vendedor? Escríbelo arriba."; return; }
+      if (isNaN(mp)) { el.innerHTML = "¿A qué % está el Zelle del vendedor? Escríbelo arriba (0 si está a la par)."; return; }
       if ((f.pago_en.value !== "USD" || gmon === "CUP") && !(t > 0)) { el.innerHTML = "Escribe la tasa de los CUP para calcular."; return; }
-      const precio = z * (1 + mp / 100), gan = calcularGanancia("zelle", z, gp, gmon, t);
+      const precio = precioZelle(z, mp), gan = calcularGanancia("zelle", z, gp, gmon, t);
       const costo = pu + (pc ? pc / t : 0), dif = costo - precio;
-      let h = `Al <b>${mp} %</b> el vendedor cobra <b>${dinero(precio)} USD</b>${t > 0 ? ` = <b>${dinero(precio * t, 0)} CUP</b>` : ""}.`;
+      let h = `Al <b>${fPct(mp)}</b>${mp < 0 ? " (a favor de Gabriel)" : ""} el vendedor cobra <b>${dinero(precio)} USD</b> por ${dinero(z)} USD de Zelle${t > 0 ? ` = <b>${dinero(precio * t, 0)} CUP</b>` : ""}.`;
       if (pu || pc) h += `<br>Le pagas: <b>${[pu ? dinero(pu) + " USD" : "", pc ? dinero(pc, 0) + " CUP" : ""].filter(Boolean).join(" + ")}</b>${Math.abs(dif) > 0.5 ? ` <span class="pierde">(${dif > 0 ? "+" : "−"}${dinero(Math.abs(dif))} USD de lo calculado)</span>` : ""}`;
       if (gan) h += `<br>Tu ganancia (${gp} %): <b class="gana">${dinero(gan, gmon === "CUP" ? 0 : 2)} ${gmon}</b> → a <b>Ganancias</b>`;
       const sale = { USD: pu, CUP: pc }; if (gan) sale[gmon] += gan;
@@ -478,9 +493,9 @@
       if (tipo !== "zelle") return;
       if (!ganMonTocada) f.gan_moneda.value = f.pago_en.value === "CUP" ? "CUP" : "USD";
       if (pagoTocado || f.pago_en.value === "mixto") return;
-      const z = num(f.zelle.value), mp = num(f.mercado_pct.value), t = num(f.tasa.value);
-      if (!(z > 0) || f.mercado_pct.value.trim() === "" || !(mp >= 0)) return;
-      const precio = z * (1 + mp / 100);
+      const z = num(f.zelle.value), mp = mpFirmado(), t = num(f.tasa.value);
+      if (!(z > 0) || isNaN(mp) || mp <= -100) return;
+      const precio = precioZelle(z, mp);
       if (f.pago_en.value === "USD") { f.pago_usd.value = precio.toFixed(2); f.pago_cup.value = ""; f.pago_usd.classList.add("leido"); f.pago_cup.classList.remove("leido"); }
       else if (t > 0) { f.pago_cup.value = String(Math.round(precio * t)); f.pago_usd.value = ""; f.pago_cup.classList.add("leido"); f.pago_usd.classList.remove("leido"); }
     }
@@ -570,13 +585,15 @@
         if (!nuevo.pago_usd && !nuevo.pago_cup) err.push("Escribe lo que le pagaste al vendedor (USD, CUP o las dos).");
         if (nuevo.pago_cup && !(nuevo.tasa > 0)) err.push("Pagaste en CUP: escribe la tasa.");
         nuevo.banco = v("banco"); nuevo.confirmacion = v("confirmacion"); nuevo.nota = v("nota");
-        nuevo.mercado_pct = num(v("mercado_pct")) || 0;
+        nuevo.mercado_pct = mpFirmado() || 0;
+        if (nuevo.mercado_pct <= -50) err.push("Revisa el % del vendedor.");
         nuevo.pago_en = v("pago_en");
         nuevo.cuenta = comp && comp.cuenta || (previo && previo.cuenta) || null;
         nuevo.quien = v("quien");
         if (!nuevo.quien) err.push("Escribe quién mandó el Zelle (el nombre que te dijeron con la foto).");
       } else if (tipo === "cambio") {
-        nuevo.cup = positivo("cup", "los CUP que diste"); nuevo.usd = positivo("usd", "los USD que recibiste"); nuevo.nota = v("nota");
+        nuevo.dir = v("dir") === "usd_cup" ? "usd_cup" : "cup_usd";
+        nuevo.cup = positivo("cup", "los CUP"); nuevo.usd = positivo("usd", "los USD"); nuevo.nota = v("nota");
       } else {
         nuevo.moneda = v("moneda") === "USD" ? "USD" : "CUP"; nuevo.importe = positivo("importe", "el importe");
         if (tipo === "recibi") { nuevo.de = v("de"); if (!nuevo.de) err.push("Escribe de quién lo recibiste."); }
@@ -609,10 +626,10 @@
       if (tipo === "cambio" && tasaRara(nuevo.cup / nuevo.usd)) dudas.push(`El cambio sale a ${dinero(nuevo.cup / nuevo.usd)} CUP por 1 USD: ¿están bien los CUP y los USD?`);
       if (tipo === "zelle") {
         if (nuevo.zelle > 15000) dudas.push(`El Zelle es de ${dinero(nuevo.zelle)} USD: es mucho, ¿está bien?`);
-        if (nuevo.mercado_pct > 15) dudas.push(`El % del vendedor (${nuevo.mercado_pct} %) es muy alto.`);
-        const precio = nuevo.zelle * (1 + (nuevo.mercado_pct || 0) / 100), costo = costoZelle(nuevo);
+        if (Math.abs(nuevo.mercado_pct) > 15) dudas.push(`El % del vendedor (${fPct(nuevo.mercado_pct)}) es muy ${nuevo.mercado_pct > 0 ? "alto" : "bajo"}.`);
+        const precio = precioZelle(nuevo.zelle, nuevo.mercado_pct || 0), costo = costoZelle(nuevo);
         if (nuevo.mercado_pct && precio && Math.abs(costo - precio) / precio > 0.03)
-          dudas.push(`Le pagas al vendedor ${dinero(costo)} USD y al ${nuevo.mercado_pct} % serían ${dinero(precio)} USD.`);
+          dudas.push(`Le pagas al vendedor ${dinero(costo)} USD y al ${fPct(nuevo.mercado_pct)} serían ${dinero(precio)} USD.`);
       }
       if (nuevo.moneda === "USD" && nuevo.importe > 50000) dudas.push(`${dinero(nuevo.importe)} USD es mucho dinero: ¿no son CUP?`);
       if (nuevo.moneda === "CUP" && nuevo.importe > 0 && nuevo.importe < 100 && tipo !== "pague") dudas.push(`Solo ${dinero(nuevo.importe, 0)} CUP: ¿no son USD?`);
@@ -639,9 +656,12 @@
       );
       if (m.pago_usd || !m.pago_cup) filas.push(["Pagué en USD", dinero(m.pago_usd || 0) + " USD"]);
       if (m.pago_cup) filas.push(["Pagué en CUP", dinero(m.pago_cup, 0) + " CUP"], ["Tasa", dinero(m.tasa)]);
-      filas.push(["Costó", `${dinero(costo)} USD`], ["Por encima del Zelle", `${pct >= 0 ? "+" : ""}${pct.toFixed(2)} %`]);
-      if (m.mercado_pct) filas.push(["El Zelle estaba a", `${m.mercado_pct} %`], ["% pagado al vendedor", `${dinero(m.zelle * m.mercado_pct / 100)} USD`]);
-    } else if (m.tipo === "cambio") filas.push(["Entregué", dinero(m.cup, 0) + " CUP"], ["Recibí", dinero(m.usd) + " USD"], ["Tasa", dinero(m.cup / m.usd)]);
+      filas.push(["Costó", `${dinero(costo)} USD`], [pct >= 0 ? "Por encima del Zelle" : "Por debajo del Zelle", `${pct >= 0 ? "+" : "−"}${Math.abs(pct).toFixed(2)} %`]);
+      if (m.mercado_pct) filas.push(["El Zelle estaba a", fPct(m.mercado_pct) + (m.mercado_pct < 0 ? " (a favor de Gabriel)" : "")],
+        [m.mercado_pct < 0 ? "A favor de Gabriel" : "% pagado al vendedor", `${dinero(Math.abs(precioZelle(m.zelle, m.mercado_pct) - m.zelle))} USD`]);
+    } else if (m.tipo === "cambio") filas.push(["Cambio", m.dir === "usd_cup" ? "USD → CUP" : "CUP → USD"],
+      ["Entregué", m.dir === "usd_cup" ? dinero(m.usd) + " USD" : dinero(m.cup, 0) + " CUP"],
+      ["Recibí", m.dir === "usd_cup" ? dinero(m.cup, 0) + " CUP" : dinero(m.usd) + " USD"], ["Tasa", dinero(m.cup / m.usd)]);
     else {
       if (m.de) filas.push(["De", m.de]);
       if (m.a) filas.push(["A", m.a]);
