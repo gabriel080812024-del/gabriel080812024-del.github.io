@@ -697,3 +697,14 @@
   if ("serviceWorker" in navigator) navigator.serviceWorker.register("sw.js").catch(() => {});
   pintar();
 })();
+
+/* sin zoom con dos toques seguidos (por si el navegador ignora la etiqueta del viewport) */
+(() => {
+  let ultimo = 0;
+  document.addEventListener("touchend", (e) => {
+    const ahora = Date.now();
+    if (ahora - ultimo < 320 && !e.target.closest("input, textarea, select")) e.preventDefault();
+    ultimo = ahora;
+  }, { passive: false });
+  document.addEventListener("gesturestart", (e) => e.preventDefault());
+})();

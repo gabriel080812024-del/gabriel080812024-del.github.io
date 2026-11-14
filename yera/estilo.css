@@ -137,3 +137,8 @@ body.con-nav .nav { display: grid; }
 .pregunta.activa { background: #fff8e6; border-color: #f0c873; box-shadow: 0 0 0 3px #fdefc8; }
 .pregunta .calculo { background: #fff; }
 h2 small { font-weight: 400; color: var(--gris); font-size: 12.5px; }
+
+/* que se sienta como una app: sin zoom por doble toque, sin seleccionar texto al tocar botones, sin rebote */
+html, body { touch-action: pan-x pan-y; overscroll-behavior-y: none; }
+button, .accion, .mov, .nav, .rapidos, .barra, label.foto, .mes-sel { -webkit-user-select: none; user-select: none; -webkit-touch-callout: none; }
+input, select, textarea { font-size: 16px; }   /* con 16 px el teléfono no acerca la pantalla al escribir */
