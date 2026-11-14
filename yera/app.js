@@ -241,7 +241,7 @@
     const i = meses.indexOf(mes), ant = meses[i - 1] || null, sig = meses[i + 1] || null;
     const queda = (m) => {
       const d = despues.get(m.id), e = efecto(m);
-      return Object.keys(e).map((k) => `queda ${dinero(d[k], k === "CUP" ? 0 : 2)} ${k}`).join(" · ");
+      return Object.keys(e).map((k) => `queda ${dinero(d[k], k === "CUP" ? 0 : 2)}\u00a0${k}`).join(" · ");
     };
     const dias = agruparPorDia(delMes.slice().reverse());
     vista.innerHTML = `
@@ -280,7 +280,8 @@
       <div class="tarjeta">
         <b>Recuperar una copia</b>
         <p class="nota">Si cambiaste de teléfono o se borró la app: elige el último archivo .yera que mandaste y escribe su contraseña.</p>
-        <label>Archivo (.yera)<input type="file" id="copia" accept=".yera,application/octet-stream"></label>
+        <label>Archivo (.yera)</label>
+        <label class="elegir-archivo"><input type="file" id="copia" accept=".yera,application/octet-stream" hidden>${ico("libro")}<span id="copia-nombre">Elegir el archivo</span></label>
         <label>Contraseña<input type="password" id="clave2" autocomplete="off"></label>
         <button class="boton sec" id="recuperar">Recuperar</button>
       </div>
@@ -290,6 +291,7 @@
         <p class="nota">Caja del Yera · funciona sin internet</p>
       </div>`;
     $("#recuperar").onclick = recuperarCopia;
+    $("#copia").onchange = () => { const f = $("#copia").files[0]; $("#copia-nombre").textContent = f ? f.name : "Elegir el archivo"; };
   }
   async function recuperarCopia() {
     const f = $("#copia").files[0];
@@ -362,12 +364,12 @@
     if (tipo === "zelle") cuerpo = `
       ${campo("quien", "¿Quién mandó el Zelle? <small>(el nombre que viene con la foto)</small>", m.quien || "", 'list="remitentes" required autocomplete="off" placeholder="Nombre"')}
       ${campo("zelle", "Zelle recibido (USD)", m.zelle, dec + ' required placeholder="1050.00"')}
-      <div class="dos">${campo("fecha", "Fecha", m.fecha, 'type="date" required')}${campo("banco", "Banco", m.banco, 'placeholder="Bank of America"')}</div>
+      <div class="dos">${campo("fecha", "Fecha", m.fecha, 'type="date" required')}${campo("banco", "Banco", m.banco, 'placeholder="Chase, BofA…"')}</div>
       ${campo("confirmacion", "N.º de confirmación", m.confirmacion, 'autocapitalize="off" spellcheck="false"')}
       <div class="pregunta" id="pregunta">
         <b>¿A qué porcentajes?</b>
-        <div class="dos">${campo("mercado_pct", "% del vendedor", m.mercado_pct || (await ajuste("mercado_pct")) || "", dec + ' placeholder="5"')}
-          ${campo("gan_pct", "Tu %", m.gan_pct || ganUlt[tipo] || "", dec + ' placeholder="0"')}</div>
+        <div class="dos">${campo("mercado_pct", "% del vendedor", m.mercado_pct || (await ajuste("mercado_pct")) || "", dec + ' placeholder="ej. 5"')}
+          ${campo("gan_pct", "Tu %", m.gan_pct || ganUlt[tipo] || "", dec + ' placeholder="ej. 1"')}</div>
         <label>¿Cómo le pagas al vendedor?<select name="pago_en">
           <option value="USD" ${pagoEn === "USD" ? "selected" : ""}>En USD</option><option value="CUP" ${pagoEn === "CUP" ? "selected" : ""}>En CUP</option>
           <option value="mixto" ${pagoEn === "mixto" ? "selected" : ""}>Parte USD y parte CUP</option></select></label>
@@ -386,7 +388,7 @@
     else if (tipo === "cambio") cuerpo = `
       <div class="dos">${campo("cup", "Entregué CUP", m.cup, dec + " required")}${campo("usd", "Recibí USD", m.usd, dec + " required")}</div>
       <h2>Mi ganancia</h2>
-      <div class="dos">${campo("gan_pct", "Mi % ", m.gan_pct || ganUlt[tipo] || "", dec + ' placeholder="0"')}
+      <div class="dos">${campo("gan_pct", "Mi % ", m.gan_pct || ganUlt[tipo] || "", dec + ' placeholder="ej. 1"')}
         <label>La cobro en<select name="gan_moneda">${GANMON}</select></label></div>
       <div class="calculo" id="calc"></div>
       ${campo("fecha", "Fecha", m.fecha, 'type="date" required')}${campo("nota", "¿Con quién? <small>(opcional)</small>", m.nota)}`;
@@ -396,7 +398,7 @@
       ${campo("importe", "Importe", m.importe, dec + " required")}</div>
       ${campo("concepto", "¿Por qué?", m.concepto, 'placeholder="Flete, mercancía…"')}${campo("fecha", "Fecha", m.fecha, 'type="date" required')}
       <h2>Mi ganancia por el envío</h2>
-      ${campo("gan_pct", "Mi % <small>(opcional)</small>", m.gan_pct || "", dec + ' placeholder="0"')}
+      ${campo("gan_pct", "Mi % <small>(opcional)</small>", m.gan_pct || "", dec + ' placeholder="ej. 1"')}
       <div class="calculo" id="calc"></div>`;
     else if (tipo === "entregue") cuerpo = `
       <div class="dos"><label>Moneda<select name="moneda"><option ${m.moneda === "USD" ? "selected" : ""}>USD</option><option ${m.moneda === "CUP" ? "selected" : ""}>CUP</option></select></label>
@@ -594,10 +596,12 @@
     const filas = [["Fecha", fFecha(m.fecha)]];
     if (m.tipo === "zelle") {
       const costo = costoZelle(m), pct = (costo / m.zelle - 1) * 100;
-      filas.push(["Lo mandó", m.quien || "—"], ["Zelle recibido", dinero(m.zelle) + " USD"], ["Banco", m.banco || "—"], ["N.º de confirmación", m.confirmacion || "—"], ["Cuenta de origen", m.cuenta || "—"],
-        ["Pagué en USD", dinero(m.pago_usd || 0)], ["Pagué en CUP", dinero(m.pago_cup || 0, 0) + (m.pago_cup ? ` (tasa ${dinero(m.tasa)})` : "")],
-        ["Costó", `${dinero(costo)} USD (${pct >= 0 ? "+" : ""}${pct.toFixed(2)} %)`]);
-      if (m.mercado_pct) filas.push(["El Zelle estaba a", `${m.mercado_pct} %`]);
+      filas.push(["Lo mandó", m.quien || "—"], ["Zelle recibido", dinero(m.zelle) + " USD"], ["Banco", m.banco || "—"], ["N.º de confirmación", m.confirmacion || "—"], ["Cuenta de origen", m.cuenta || "—"]
+      );
+      if (m.pago_usd || !m.pago_cup) filas.push(["Pagué en USD", dinero(m.pago_usd || 0) + " USD"]);
+      if (m.pago_cup) filas.push(["Pagué en CUP", dinero(m.pago_cup, 0) + " CUP"], ["Tasa", dinero(m.tasa)]);
+      filas.push(["Costó", `${dinero(costo)} USD`], ["Por encima del Zelle", `${pct >= 0 ? "+" : ""}${pct.toFixed(2)} %`]);
+      if (m.mercado_pct) filas.push(["El Zelle estaba a", `${m.mercado_pct} %`], ["% pagado al vendedor", `${dinero(m.zelle * m.mercado_pct / 100)} USD`]);
     } else if (m.tipo === "cambio") filas.push(["Entregué", dinero(m.cup, 0) + " CUP"], ["Recibí", dinero(m.usd) + " USD"], ["Tasa", dinero(m.cup / m.usd)]);
     else {
       if (m.de) filas.push(["De", m.de]);
@@ -671,7 +675,7 @@
         <label>Contraseña acordada con Gabriel <small>(mínimo 8)</small><input type="password" id="clave" value="${esc(clave)}" autocomplete="off"></label>
         <label style="font-weight:400;display:flex;gap:8px;align-items:center"><input type="checkbox" id="recordar" ${clave ? "checked" : ""} style="width:auto;margin:0"> Recordarla en este teléfono</label>
         <button class="boton" id="mandar">${ico("enviar")} Crear y mandar</button>
-        <p class="nota">Ese mismo archivo es tu copia de seguridad: si cambias de teléfono, lo cargas abajo con la contraseña y recuperas todo.</p>
+        <p class="nota">Ese mismo archivo es tu copia de seguridad: si cambias de teléfono, lo cargas en Ajustes con la contraseña y recuperas todo.</p>
       </div>
 `;
     $("#mandar").onclick = async (e) => {
@@ -698,17 +702,34 @@
   window.__caja = { crearArchivo, leerArchivo, todos, saldos };
 
   // ------------------------------------------------------------ funcionar sin internet
-  if ("serviceWorker" in navigator) navigator.serviceWorker.register("sw.js").catch(() => {});
+  if ("serviceWorker" in navigator) {
+    // cuando llega una versión nueva se recarga sola (una vez), y busca versiones nuevas al volver a la app
+    const habia = !!navigator.serviceWorker.controller;
+    let recargado = false;
+    navigator.serviceWorker.addEventListener("controllerchange", () => {
+      if (!habia || recargado || document.querySelector("#vista form")) return;
+      recargado = true; location.reload();
+    });
+    navigator.serviceWorker.register("sw.js").then((reg) => {
+      document.addEventListener("visibilitychange", () => { if (document.visibilityState === "visible") reg.update().catch(() => {}); });
+    }).catch(() => {});
+  }
   pintar();
 })();
 
-/* sin zoom con dos toques seguidos (por si el navegador ignora la etiqueta del viewport) */
+/* sin zoom con dos toques seguidos ni con dos dedos (por si el navegador, p. ej. Brave, ignora la etiqueta del viewport).
+   El segundo toque rápido no se pierde: se hace el clic a mano. */
 (() => {
   let ultimo = 0;
   document.addEventListener("touchend", (e) => {
     const ahora = Date.now();
-    if (ahora - ultimo < 320 && !e.target.closest("input, textarea, select")) e.preventDefault();
+    if (ahora - ultimo < 350 && e.changedTouches.length === 1 && !e.target.closest("input, textarea, select, [contenteditable]")) {
+      e.preventDefault();
+      const b = e.target.closest("button, a, label, [data-ir]");
+      if (b) b.click();
+    }
     ultimo = ahora;
   }, { passive: false });
-  document.addEventListener("gesturestart", (e) => e.preventDefault());
+  document.addEventListener("touchmove", (e) => { if (e.touches.length > 1) e.preventDefault(); }, { passive: false });
+  for (const ev of ["gesturestart", "gesturechange", "dblclick"]) document.addEventListener(ev, (e) => e.preventDefault(), { passive: false });
 })();

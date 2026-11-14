@@ -141,6 +141,29 @@ body.con-nav .nav { display: grid; }
 h2 small { font-weight: 400; color: var(--gris); font-size: 12.5px; }
 
 /* que se sienta como una app: sin zoom por doble toque, sin seleccionar texto al tocar botones, sin rebote */
-html, body { touch-action: pan-x pan-y; overscroll-behavior-y: none; }
+html, body, * { touch-action: pan-x pan-y; } html, body { overscroll-behavior-y: none; }
 button, .accion, .mov, .nav, .rapidos, .barra, label.foto, .mes-sel { -webkit-user-select: none; user-select: none; -webkit-touch-callout: none; }
 input, select, textarea { font-size: 16px; }   /* con 16 px el teléfono no acerca la pantalla al escribir */
+
+/* nombres completos: pasan a dos líneas en vez de cortarse */
+.mov .tx b { white-space: normal; overflow: visible; text-overflow: clip; overflow-wrap: anywhere; line-height: 1.3; }
+.mov .tx small { display: block; line-height: 1.35; overflow-wrap: anywhere; }
+.mov .im { flex: none; max-width: 46%; }
+.mov .im small { white-space: normal; }
+/* detalle: las palabras no se parten por la mitad */
+.detalle dl { grid-template-columns: minmax(0, auto) minmax(0, 1fr); align-items: baseline; }
+.detalle dd { word-break: normal; overflow-wrap: anywhere; }
+/* elegir archivo con botón propio (el del sistema se corta) */
+.elegir-archivo { display: flex; align-items: center; gap: 10px; margin-top: 6px; padding: 12px 14px; border: 1px dashed #a9c7bf; border-radius: 12px;
+  background: var(--tinte2); color: var(--verde-osc); font-weight: 600; font-size: 15px; }
+.elegir-archivo span { min-width: 0; overflow-wrap: anywhere; }
+/* diario y listas en teléfonos estrechos: más sitio para el nombre */
+.mov .im { max-width: 42%; }
+@media (max-width: 400px) {
+  .mov { gap: 10px; padding: 11px 12px; }
+  .mov .ic { width: 34px; height: 34px; border-radius: 11px; }
+  .mov .ic svg { width: 19px; height: 19px; }
+  .mov .im { max-width: 38%; }
+  .mov .tx b { font-size: 14.5px; }
+}
+.tarjeta h2 { margin-left: 0; margin-right: 0; }   /* alineados con las demás etiquetas */
