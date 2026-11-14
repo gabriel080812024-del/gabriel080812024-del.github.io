@@ -167,3 +167,6 @@ input, select, textarea { font-size: 16px; }   /* con 16 px el teléfono no acer
   .mov .tx b { font-size: 14.5px; }
 }
 .tarjeta h2 { margin-left: 0; margin-right: 0; }   /* alineados con las demás etiquetas */
+.recordar-envio { display: flex; gap: 10px; align-items: flex-start; width: 100%; text-align: left; margin: -2px 0 12px; padding: 11px 13px;
+  border-radius: 14px; border: 1px solid #f3d3a3; background: #fff4e5; color: #7a4a00; font: 500 13.5px/1.4 system-ui, sans-serif; }
+.recordar-envio svg { width: 20px; height: 20px; margin-top: 1px; }

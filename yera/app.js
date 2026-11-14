@@ -69,13 +69,14 @@
   // ------------------------------------------------------------ números y fechas
   const hoy = () => { const d = new Date(); return new Date(d - d.getTimezoneOffset() * 6e4).toISOString().slice(0, 10); };
   const fechaDe = (ms) => { const d = new Date(ms); return new Date(d - d.getTimezoneOffset() * 6e4).toISOString().slice(0, 10); };
-  const dinero = (v, dec = 2) => (v < 0 ? "−" : "") + Math.abs(v || 0).toLocaleString("en-US", { minimumFractionDigits: dec, maximumFractionDigits: dec });
+  const dinero = (v, dec = 2) => { v = Math.round((v || 0) * 10 ** dec) / 10 ** dec; return (v < 0 ? "−" : "") + Math.abs(v).toLocaleString("en-US", { minimumFractionDigits: dec, maximumFractionDigits: dec }); };
   const fFecha = (f) => (f ? `${f.slice(8, 10)}/${f.slice(5, 7)}/${f.slice(0, 4)}` : "");
   function num(s) {
     s = String(s ?? "").trim().replace(/\s|\$/g, "");
     if (!s) return 0;
     if (s.includes(",") && s.includes(".")) s = s.lastIndexOf(".") > s.lastIndexOf(",") ? s.replace(/,/g, "") : s.replace(/\./g, "").replace(",", ".");
     else if (s.includes(",")) s = /,\d{1,2}$/.test(s) ? s.replace(",", ".") : s.replace(/,/g, "");
+    else if (/^-?\d{1,3}(\.\d{3})+$/.test(s)) s = s.replace(/\./g, "");   // 642.096 = 642096 (punto de miles)
     const v = parseFloat(s);
     return isNaN(v) ? NaN : Math.round(v * 100) / 100;
   }
@@ -191,6 +192,8 @@
     const movs = await todos(), s = saldos(movs);
     const pct = s.zelleMes ? (s.costoMes / s.zelleMes - 1) * 100 : 0;
     const recientes = movs.slice(0, 25);
+    const ultimo = await ajuste("ultimo_envio");
+    const sinMandar = movs.length && (!ultimo || ultimo < fechaDe(Date.now() - 7 * 864e5));
     vista.innerHTML = `
       <section class="saldo-cab">
         <small>Tengo de Gabriel</small>
@@ -203,6 +206,7 @@
         <div><small>Ganancias (lo mío)</small><b>${dinero(s.gan.USD)} <i>USD</i></b>${s.gan.CUP ? `<b>${dinero(s.gan.CUP, 0)} <i>CUP</i></b>` : ""}</div>
         <div class="mes"><small>este mes</small><b>+${dinero(s.ganMes.USD)}</b>${s.ganMes.CUP ? `<b>+${dinero(s.ganMes.CUP, 0)}</b>` : ""}</div>
       </section>
+      ${sinMandar ? `<button class="recordar-envio" data-ir="#/enviar">${ico("enviar")}<span>${ultimo ? `Hace más de una semana que no mandas el archivo a Gabriel (último: ${fFecha(ultimo)}).` : "Todavía no has mandado el archivo a Gabriel."} Es tu copia: si se pierde el teléfono, se pierde todo.</span></button>` : ""}
       <div class="rapidos">
         ${["recibi", "cambio", "pague", "entregue"].map((k) => `<button data-ir="#/nuevo/${k}"><span class="ic ${tono({ tipo: k })}">${ico(TIPOS[k].icono)}</span>${TIPOS[k].corto === "Cambio" ? "Cambié" : TIPOS[k].corto}</button>`).join("")}
       </div>
@@ -217,7 +221,7 @@
     cabecera("Libro diario", false, "diario");
     const movs = (await todos()).slice().sort((a, b) => (a.fecha + a.creado).localeCompare(b.fecha + b.creado));
     const meses = [...new Set(movs.map((m) => m.fecha.slice(0, 7)))].sort();
-    const mes = mesPedido && /^\d{4}-\d{2}$/.test(mesPedido) ? mesPedido : (meses[meses.length - 1] || hoy().slice(0, 7));
+    const mes = mesPedido && /^\d{4}-(0[1-9]|1[0-2])$/.test(mesPedido) ? mesPedido : (meses[meses.length - 1] || hoy().slice(0, 7));
     // saldos corridos desde el principio
     const corr = { CUP: 0, USD: 0 }, despues = new Map(), cierre = new Map();
     let inicioMes = null, finMes = null;
@@ -298,13 +302,23 @@
     if (!f) return avisar("Elige el archivo .yera.", true);
     try {
       const d = await leerArchivo(new Uint8Array(await f.arrayBuffer()), $("#clave2").value);
-      let n = 0;
-      for (const x of d.movimientos || []) {
+      if (!d || d.formato !== "caja-yera") throw new Error("Ese archivo no es de la Caja del Yera.");
+      const validos = (d.movimientos || []).filter((x) => x && x.id && TIPOS[x.tipo] && /^\d{4}-\d{2}-\d{2}$/.test(x.fecha || ""));
+      const aqui = new Map((await todos()).map((m) => [m.id, m]));
+      const cuando = (m) => m.cambiado || m.creado || "";
+      const nuevos = validos.filter((x) => !aqui.has(x.id));
+      const masNuevos = validos.filter((x) => aqui.has(x.id) && cuando(x) > cuando(aqui.get(x.id)));
+      if (!nuevos.length && !masNuevos.length) return avisar("Esa copia no trae nada que no tengas ya.");
+      const ops = (n) => `${n} ${n === 1 ? "operación" : "operaciones"}`;
+      const fCopia = Date.parse(d.generado || "") ? fFecha(fechaDe(Date.parse(d.generado))) : "—";
+      if (!confirm(`La copia es del ${fCopia}.\n\nSe añaden ${ops(nuevos.length)}` +
+        (masNuevos.length ? ` y se actualizan ${masNuevos.length}` : "") + ". Lo que ya tienes en el teléfono y es más nuevo no se toca.\n\n¿Seguir?")) return;
+      for (const x of [...nuevos, ...masNuevos]) {
         if (x.comprobante && x.comprobante.datos) x.comprobante = deB64(x.comprobante.datos, x.comprobante.tipo);
         else delete x.comprobante;
-        await guardarMov(x); n++;
+        await guardarMov(x);
       }
-      avisar(`Recuperadas ${n} operaciones.`); ir("#/");
+      avisar(`Recuperada${nuevos.length + masNuevos.length === 1 ? "" : "s"} ${ops(nuevos.length + masNuevos.length)}.`); ir("#/");
     } catch (err) { avisar(err.message || String(err), true); }
   }
 
@@ -534,8 +548,15 @@
       await borrarMov(previo.id); avisar("Borrado."); ir("#/");
     };
 
+    let guardando = false;
     f.onsubmit = async (e) => {
       e.preventDefault();
+      if (guardando) return;
+      guardando = true;
+      const btn = f.querySelector('button[type="submit"]'); btn.disabled = true;
+      try { await guardarForm(); } finally { guardando = false; if (document.body.contains(btn)) btn.disabled = false; }
+    };
+    const guardarForm = async () => {
       const err = [];
       const v = (n) => (f[n] ? f[n].value.trim() : "");
       const nuevo = { id: previo ? previo.id : (crypto.randomUUID ? crypto.randomUUID() : String(Date.now()) + Math.random()), tipo,
@@ -579,6 +600,24 @@
       if (!err.length) { const r = await repetido(nuevo, movs); if (r) err.push(r + " No se guardó para no contarlo dos veces."); }
       $("#errores").innerHTML = err.map((x) => `<li class="malo">${esc(x)}</li>`).join("");
       if (err.length) { $("#errores").scrollIntoView({ block: "center" }); return; }
+      const dudas = [];
+      const fechaNueva = !previo || previo.fecha !== nuevo.fecha;   // al modificar algo viejo no molestar por la fecha
+      if (fechaNueva && nuevo.fecha > hoy()) dudas.push(`La fecha (${fFecha(nuevo.fecha)}) es de un día que todavía no ha llegado.`);
+      else if (fechaNueva && nuevo.fecha < fechaDe(Date.now() - 120 * 864e5)) dudas.push(`La fecha (${fFecha(nuevo.fecha)}) es de hace más de 4 meses.`);
+      const tasaRara = (t) => t && (t < 100 || t > 1500);
+      if (tasaRara(nuevo.tasa)) dudas.push(`La tasa ${dinero(nuevo.tasa)} CUP por 1 USD parece rara.`);
+      if (tipo === "cambio" && tasaRara(nuevo.cup / nuevo.usd)) dudas.push(`El cambio sale a ${dinero(nuevo.cup / nuevo.usd)} CUP por 1 USD: ¿están bien los CUP y los USD?`);
+      if (tipo === "zelle") {
+        if (nuevo.zelle > 15000) dudas.push(`El Zelle es de ${dinero(nuevo.zelle)} USD: es mucho, ¿está bien?`);
+        if (nuevo.mercado_pct > 15) dudas.push(`El % del vendedor (${nuevo.mercado_pct} %) es muy alto.`);
+        const precio = nuevo.zelle * (1 + (nuevo.mercado_pct || 0) / 100), costo = costoZelle(nuevo);
+        if (nuevo.mercado_pct && precio && Math.abs(costo - precio) / precio > 0.03)
+          dudas.push(`Le pagas al vendedor ${dinero(costo)} USD y al ${nuevo.mercado_pct} % serían ${dinero(precio)} USD.`);
+      }
+      if (nuevo.moneda === "USD" && nuevo.importe > 50000) dudas.push(`${dinero(nuevo.importe)} USD es mucho dinero: ¿no son CUP?`);
+      if (nuevo.moneda === "CUP" && nuevo.importe > 0 && nuevo.importe < 100 && tipo !== "pague") dudas.push(`Solo ${dinero(nuevo.importe, 0)} CUP: ¿no son USD?`);
+      if (nuevo.gan_pct > 10) dudas.push(`Tu ganancia es del ${nuevo.gan_pct} %: es alta, ¿está bien?`);
+      if (dudas.length && !confirm("Revisa antes de guardar:\n\n• " + dudas.join("\n• ") + "\n\n¿Lo guardo así?")) return;
       if (tipo === "zelle" && nuevo.tasa) await ponerAjuste("tasa", nuevo.tasa);
       if (tipo === "zelle" && nuevo.mercado_pct) await ponerAjuste("mercado_pct", nuevo.mercado_pct);
       if (nuevo.gan_pct && tipo !== "pague") { const g = (await ajuste("gan_pct")) || {}; g[tipo] = nuevo.gan_pct; await ponerAjuste("gan_pct", g); }
@@ -665,9 +704,12 @@
     catch (e) { throw new Error("Contraseña incorrecta."); }
     return JSON.parse(await descomprimir(new Uint8Array(plano), bytes[5] === 1));
   }
+  function descargar(file, nombre) {
+    const a = document.createElement("a"); a.href = URL.createObjectURL(file); a.download = nombre; document.body.appendChild(a); a.click(); a.remove();
+  }
   async function vistaEnviar() {
     cabecera("Mandar a Gabriel", false, "enviar");
-    const clave = (await ajuste("clave")) || "";
+    const clave = (await ajuste("clave")) || "", ultimo = await ajuste("ultimo_envio");
     const movs = await todos();
     vista.innerHTML = `
       <div class="tarjeta">
@@ -675,6 +717,7 @@
         <label>Contraseña acordada con Gabriel <small>(mínimo 8)</small><input type="password" id="clave" value="${esc(clave)}" autocomplete="off"></label>
         <label style="font-weight:400;display:flex;gap:8px;align-items:center"><input type="checkbox" id="recordar" ${clave ? "checked" : ""} style="width:auto;margin:0"> Recordarla en este teléfono</label>
         <button class="boton" id="mandar">${ico("enviar")} Crear y mandar</button>
+        <p class="nota">${ultimo ? `Último archivo creado: <b>${fFecha(ultimo)}</b>.` : "Todavía no has mandado ningún archivo."}</p>
         <p class="nota">Ese mismo archivo es tu copia de seguridad: si cambias de teléfono, lo cargas en Ajustes con la contraseña y recuperas todo.</p>
       </div>
 `;
@@ -688,9 +731,16 @@
         const nombre = `caja-yera_${hoy()}.yera`;
         const file = new File([bytes], nombre, { type: "application/octet-stream" });
         if (navigator.canShare && navigator.canShare({ files: [file] })) {
-          await navigator.share({ files: [file], title: nombre, text: "Caja del Yera" }).catch((err) => { if (err.name !== "AbortError") throw err; });
+          let compartido = true;
+          await navigator.share({ files: [file], title: nombre, text: "Caja del Yera" }).catch((err) => {
+            if (err.name === "AbortError") { compartido = false; return; }
+            compartido = null;  // no dejó compartir (tardó mucho): se descarga
+          });
+          if (compartido === null) { descargar(file, nombre); avisar("Archivo guardado en Descargas: mándalo por WhatsApp."); }
+          if (compartido !== false) await ponerAjuste("ultimo_envio", hoy());
         } else {
-          const a = document.createElement("a"); a.href = URL.createObjectURL(file); a.download = nombre; document.body.appendChild(a); a.click(); a.remove();
+          descargar(file, nombre);
+          await ponerAjuste("ultimo_envio", hoy());
           avisar("Archivo guardado en Descargas: mándalo por WhatsApp.");
         }
       } catch (err) { avisar("No se pudo crear el archivo: " + (err.message || err), true); }
