@@ -170,3 +170,15 @@ input, select, textarea { font-size: 16px; }   /* con 16 px el teléfono no acer
 .recordar-envio { display: flex; gap: 10px; align-items: flex-start; width: 100%; text-align: left; margin: -2px 0 12px; padding: 11px 13px;
   border-radius: 14px; border: 1px solid #f3d3a3; background: #fff4e5; color: #7a4a00; font: 500 13.5px/1.4 system-ui, sans-serif; }
 .recordar-envio svg { width: 20px; height: 20px; margin-top: 1px; }
+/* bitácora */
+.bit { display: flex; gap: 12px; padding: 12px 14px; border-bottom: 1px solid var(--linea); }
+.bit:last-child { border-bottom: 0; }
+.bit .ic { width: 34px; height: 34px; border-radius: 11px; display: grid; place-items: center; flex: none; }
+.bit .ic svg { width: 18px; height: 18px; }
+.bit > div { min-width: 0; flex: 1; }
+.bit b { display: block; font-size: 14.5px; line-height: 1.3; overflow-wrap: anywhere; }
+.bit small { color: var(--gris); font-size: 12px; }
+.bit ul { margin: 6px 0 0; padding-left: 16px; font-size: 13px; color: var(--texto); }
+.bit li { overflow-wrap: anywhere; }
+.enlace-hist { display: flex; align-items: center; gap: 6px; background: none; border: 0; color: var(--verde-osc); font: 600 14px system-ui, sans-serif; padding: 12px 0 0; }
+.enlace-hist svg { width: 18px; height: 18px; }

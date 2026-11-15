@@ -38,11 +38,12 @@
   function db() {
     if (_db) return _db;
     _db = new Promise((ok, mal) => {
-      const r = indexedDB.open("caja-yera", 1);
+      const r = indexedDB.open("caja-yera", 2);
       r.onupgradeneeded = () => {
         const d = r.result;
         if (!d.objectStoreNames.contains("mov")) d.createObjectStore("mov", { keyPath: "id" });
         if (!d.objectStoreNames.contains("ajustes")) d.createObjectStore("ajustes");
+        if (!d.objectStoreNames.contains("bitacora")) d.createObjectStore("bitacora", { keyPath: "n" });
       };
       r.onsuccess = () => ok(r.result);
       r.onerror = () => mal(r.error);
@@ -65,6 +66,52 @@
   const ajuste = (k) => tx("ajustes", "readonly", (s) => s.get(k));
   const ponerAjuste = (k, v) => tx("ajustes", "readwrite", (s) => s.put(v, k));
   if (navigator.storage && navigator.storage.persist) navigator.storage.persist().catch(() => {});
+
+  // ------------------------------------------------------------ bitácora (no se puede borrar desde la app)
+  // Cada apunte guarda el texto exacto (d) y su huella = SHA-256(huella del anterior + "|" + d).
+  // Si se quita o se cambia un apunte, la cadena se rompe y Mi Contabilidad lo avisa.
+  const FUERA = ["comprobante", "huella", "sha", "creado", "cambiado", "id", "tipo"];
+  function limpio(m) {
+    if (!m) return null;
+    const x = {};
+    for (const [k, v] of Object.entries(m)) if (!FUERA.includes(k) && v !== "" && v !== null && v !== undefined && v !== 0 && v !== false) x[k] = v;
+    if (m.comprobante) x.foto = true;
+    return x;
+  }
+  async function sha256Texto(t) {
+    const h = await crypto.subtle.digest("SHA-256", new TextEncoder().encode(t));
+    return [...new Uint8Array(h)].map((b) => b.toString(16).padStart(2, "0")).join("");
+  }
+  const bitacora = () => tx("bitacora", "readonly", (s) => s.getAll());
+  let colaBit = Promise.resolve();
+  // anota en la bitácora y, en la MISMA operación, guarda o borra el movimiento (o se hacen las dos cosas o ninguna)
+  function registrar(accion, info, cambio) {
+    const p = colaBit.then(async () => {
+      const d = await db();
+      const n = (await tx("bitacora", "readonly", (s) => s.count())) + 1;
+      const ant = n > 1 ? await tx("bitacora", "readonly", (s) => s.get(n - 1)) : null;
+      const prev = ant ? ant.hash : "0";
+      const dtxt = JSON.stringify(Object.assign({ n, cuando: new Date().toISOString(), accion }, info));
+      const hash = await sha256Texto(prev + "|" + dtxt);
+      await new Promise((ok, mal) => {
+        const t = d.transaction(["mov", "bitacora"], "readwrite");
+        if (cambio && cambio.put) t.objectStore("mov").put(cambio.put);
+        if (cambio && cambio.del) t.objectStore("mov").delete(cambio.del);
+        t.objectStore("bitacora").add({ n, prev, hash, d: dtxt });
+        t.oncomplete = ok; t.onerror = () => mal(t.error); t.onabort = () => mal(t.error || new Error("No se pudo guardar."));
+      });
+    });
+    colaBit = p.catch(() => {});
+    return p;
+  }
+  // si el teléfono ya tenía operaciones de antes de la bitácora, la primera entrada es una foto de todo
+  async function empezarBitacora() {
+    if ((await tx("bitacora", "readonly", (s) => s.count())) > 0) return;
+    const movs = await todos();
+    if (!movs.length) return;
+    await registrar("inicio", { texto: `Empieza la bitácora: había ${movs.length} operaciones anotadas`,
+      todas: movs.map((m) => ({ id: m.id, tipo: m.tipo, datos: limpio(m) })) });
+  }
 
   // ------------------------------------------------------------ números y fechas
   const hoy = () => { const d = new Date(); return new Date(d - d.getTimezoneOffset() * 6e4).toISOString().slice(0, 10); };
@@ -152,6 +199,7 @@
       if (r[0] === "enviar") return await vistaEnviar();
       if (r[0] === "diario") return await vistaDiario(r[1]);
       if (r[0] === "ajustes") return await vistaAjustes();
+      if (r[0] === "bitacora") return await vistaBitacora(r[1]);
       return await vistaInicio();
     } catch (e) { console.error(e); vista.innerHTML = `<div class="tarjeta">Algo falló: ${esc(e.message || e)}</div>`; }
   }
@@ -295,12 +343,14 @@
         <label>Contraseña<input type="password" id="clave2" autocomplete="off"></label>
         <button class="boton sec" id="recuperar">Recuperar</button>
       </div>
+      <button class="boton sec" data-ir="#/bitacora" style="margin:0 0 12px">${ico("libro")} Bitácora: todo lo que se hizo</button>
       <div class="tarjeta">
         <b>Este teléfono</b>
         <p class="nota">${movs.length} operaciones guardadas${est ? ` · ocupa ${(est.usage / 1048576).toFixed(1)} MB` : ""}. Todo se guarda solo aquí: manda el archivo a Gabriel cada semana, que también es tu copia.</p>
         <p class="nota">Caja del Yera · funciona sin internet</p>
       </div>`;
     $("#recuperar").onclick = recuperarCopia;
+    vista.querySelectorAll("[data-ir]").forEach((b) => (b.onclick = () => ir(b.dataset.ir)));
     $("#copia").onchange = () => { const f = $("#copia").files[0]; $("#copia-nombre").textContent = f ? f.name : "Elegir el archivo"; };
   }
   async function recuperarCopia() {
@@ -309,20 +359,28 @@
     try {
       const d = await leerArchivo(new Uint8Array(await f.arrayBuffer()), $("#clave2").value);
       if (!d || d.formato !== "caja-yera") throw new Error("Ese archivo no es de la Caja del Yera.");
+      const bitArchivo = Array.isArray(d.bitacora) ? d.bitacora : [];
       const validos = (d.movimientos || []).filter((x) => x && x.id && TIPOS[x.tipo] && /^\d{4}-\d{2}-\d{2}$/.test(x.fecha || ""));
       const aqui = new Map((await todos()).map((m) => [m.id, m]));
       const cuando = (m) => m.cambiado || m.creado || "";
       const nuevos = validos.filter((x) => !aqui.has(x.id));
       const masNuevos = validos.filter((x) => aqui.has(x.id) && cuando(x) > cuando(aqui.get(x.id)));
-      if (!nuevos.length && !masNuevos.length) return avisar("Esa copia no trae nada que no tengas ya.");
+      const bitAqui = await bitacora();
+      const encaja = bitAqui.every((e, i) => bitArchivo[i] && bitArchivo[i].hash === e.hash);
+      const bitFalta = encaja ? bitArchivo.slice(bitAqui.length) : [];
+      if (!nuevos.length && !masNuevos.length && !bitFalta.length) return avisar("Esa copia no trae nada que no tengas ya.");
       const ops = (n) => `${n} ${n === 1 ? "operación" : "operaciones"}`;
       const fCopia = Date.parse(d.generado || "") ? fFecha(fechaDe(Date.parse(d.generado))) : "—";
       if (!confirm(`La copia es del ${fCopia}.\n\nSe añaden ${ops(nuevos.length)}` +
         (masNuevos.length ? ` y se actualizan ${masNuevos.length}` : "") + ". Lo que ya tienes en el teléfono y es más nuevo no se toca.\n\n¿Seguir?")) return;
+      if (bitFalta.length) {   // la bitácora del archivo continúa la del teléfono: se copia tal cual (con sus sellos)
+        const dbx = await db();
+        await new Promise((ok, mal) => { const t = dbx.transaction("bitacora", "readwrite"); for (const e of bitFalta) t.objectStore("bitacora").put(e); t.oncomplete = ok; t.onerror = () => mal(t.error); });
+      }
       for (const x of [...nuevos, ...masNuevos]) {
         if (x.comprobante && x.comprobante.datos) x.comprobante = deB64(x.comprobante.datos, x.comprobante.tipo);
         else delete x.comprobante;
-        await guardarMov(x);
+        await registrar("recuperar", { id: x.id, tipo: x.tipo, texto: resumenMov(x).t + ` (de la copia del ${fCopia})`, despues: limpio(x) }, { put: x });
       }
       avisar(`Recuperada${nuevos.length + masNuevos.length === 1 ? "" : "s"} ${ops(nuevos.length + masNuevos.length)}.`); ir("#/");
     } catch (err) { avisar(err.message || String(err), true); }
@@ -561,7 +619,8 @@
     };
     if (previo) $("#borrar").onclick = async () => {
       if (!confirm("¿Borrar este movimiento? No se puede deshacer.")) return;
-      await borrarMov(previo.id); avisar("Borrado."); ir("#/");
+      await registrar("borrar", { id: previo.id, tipo: previo.tipo, texto: resumenMov(previo).t, antes: limpio(previo) }, { del: previo.id });
+      avisar("Borrado."); ir("#/");
     };
 
     let guardando = false;
@@ -639,7 +698,7 @@
       if (tipo === "zelle" && nuevo.tasa) await ponerAjuste("tasa", nuevo.tasa);
       if (tipo === "zelle" && nuevo.mercado_pct) await ponerAjuste("mercado_pct", nuevo.mercado_pct);
       if (nuevo.gan_pct && tipo !== "pague") { const g = (await ajuste("gan_pct")) || {}; g[tipo] = nuevo.gan_pct; await ponerAjuste("gan_pct", g); }
-      await guardarMov(nuevo);
+      await registrar(previo ? "modificar" : "crear", { id: nuevo.id, tipo, texto: resumenMov(nuevo).t, antes: limpio(previo), despues: limpio(nuevo) }, { put: nuevo });
       avisar(previo ? "Cambios guardados." : "Guardado.");
       ir("#/");
     };
@@ -673,12 +732,56 @@
     if (m.nota) filas.push(["Nota", m.nota]);
     vista.innerHTML = `<div class="tarjeta detalle"><dl>${filas.map(([a, b]) => `<dt>${esc(a)}</dt><dd>${esc(b)}</dd>`).join("")}</dl>
       ${m.comprobante ? (/pdf/.test(m.comprobante.type) ? `<p class="nota">Comprobante en PDF guardado.</p>` : `<img src="${URL.createObjectURL(m.comprobante)}" alt="Comprobante">`) : `<p class="nota">Sin comprobante.</p>`}
+      <button type="button" class="enlace-hist" id="historial">${ico("libro")} Ver su historial en la bitácora</button>
       <div class="dos"><button class="boton sec" id="editar">Modificar</button><button class="boton peligro" id="eliminar">${ico("papelera")} Eliminar</button></div></div>`;
     $("#editar").onclick = () => ir("#/editar/" + m.id);
+    $("#historial").onclick = () => ir("#/bitacora/" + m.id);
     $("#eliminar").onclick = async () => {
       if (!confirm("¿Eliminar este movimiento? No se puede deshacer.")) return;
-      await borrarMov(m.id); avisar("Eliminado."); ir("#/");
+      await registrar("borrar", { id: m.id, tipo: m.tipo, texto: resumenMov(m).t, antes: limpio(m) }, { del: m.id });
+      avisar("Eliminado."); ir("#/");
     };
+  }
+
+  // ------------------------------------------------------------ bitácora: pantalla de solo lectura
+  const ETIQ = { zelle: "Zelle", quien: "Quién mandó", banco: "Banco", confirmacion: "N.º confirmación", fecha: "Fecha", pago_usd: "Pagó USD", pago_cup: "Pagó CUP",
+    tasa: "Tasa", mercado_pct: "% vendedor", gan_pct: "% ganancia", ganancia: "Ganancia", gan_moneda: "Ganancia en", pago_en: "Paga en", importe: "Importe",
+    moneda: "Moneda", de: "De", a: "A", concepto: "Por", nota: "Nota", cup: "CUP", usd: "USD", dir: "Cambio", foto: "Foto", manual: "A mano", cuenta: "Cuenta" };
+  const valor = (k, v) => k === "foto" || k === "manual" ? (v ? "sí" : "no") : k === "fecha" ? fFecha(v) : k === "dir" ? (v === "usd_cup" ? "USD → CUP" : "CUP → USD") : String(v);
+  function cambios(antes, despues) {
+    const a = antes || {}, b = despues || {}, out = [];
+    for (const k of new Set([...Object.keys(a), ...Object.keys(b)])) {
+      if (JSON.stringify(a[k]) === JSON.stringify(b[k])) continue;
+      out.push(`${ETIQ[k] || k}: ${k in a ? valor(k, a[k]) : "—"} → ${k in b ? valor(k, b[k]) : "—"}`);
+    }
+    return out;
+  }
+  const ACC = { inicio: ["Empieza", "zelle"], crear: ["Anotó", "entra"], modificar: ["Modificó", "cambio"], borrar: ["Borró", "sale"], recuperar: ["Recuperó", "cambio"], enviar: ["Mandó", "zelle"] };
+  async function vistaBitacora(soloId) {
+    cabecera(soloId ? "Historial" : "Bitácora", true);
+    const lista = await bitacora();
+    // revisar que la cadena esté entera
+    let rota = null, prev = "0";
+    for (const [i, e] of lista.entries()) {
+      if (e.n !== i + 1 || e.prev !== prev || (await sha256Texto(e.prev + "|" + e.d)) !== e.hash) { rota = e.n; break; }
+      prev = e.hash;
+    }
+    const ents = lista.map((e) => Object.assign(JSON.parse(e.d), { _n: e.n })).filter((e) => !soloId || e.id === soloId).reverse();
+    const porDia = [];
+    for (const e of ents) { const f = fechaDe(Date.parse(e.cuando)); const u = porDia[porDia.length - 1]; if (u && u.f === f) u.l.push(e); else porDia.push({ f, l: [e] }); }
+    const hora = (c) => new Date(c).toLocaleTimeString("es", { hour: "2-digit", minute: "2-digit" });
+    vista.innerHTML = `
+      <div class="tarjeta" style="margin-bottom:10px">
+        <p class="nota" style="margin:0">${rota ? `<b class="neg">La bitácora está dañada desde el apunte n.º ${rota}.</b> ` : ""}Aquí queda apuntado todo lo que se hace en la app: lo que se anota, se modifica, se borra o se manda.
+          <b>No se puede borrar</b>, y viaja en el archivo que recibe Gabriel. ${lista.length} apuntes.</p>
+      </div>
+      ${porDia.length ? porDia.map((d) => `<h2>${nombreDia(d.f)}</h2><div class="lista">${d.l.map((e) => {
+        const [et, cl] = ACC[e.accion] || [e.accion, "sale"];
+        const det = e.accion === "modificar" ? cambios(e.antes, e.despues) : e.accion === "borrar" ? Object.entries(e.antes || {}).slice(0, 6).map(([k, v]) => `${ETIQ[k] || k}: ${valor(k, v)}`) : [];
+        return `<div class="bit"><span class="ic ${cl}">${ico(e.accion === "enviar" ? "enviar" : e.accion === "borrar" ? "papelera" : "libro")}</span>
+          <div><b>${esc(et)}: ${esc(e.texto || "")}</b><small>${hora(e.cuando)} · n.º ${e._n}</small>
+          ${det.length ? `<ul>${det.map((x) => `<li>${esc(x)}</li>`).join("")}</ul>` : ""}</div></div>`; }).join("")}</div>`).join("")
+        : `<div class="lista"><div class="vacio">Todavía no hay nada en la bitácora.</div></div>`}`;
   }
 
   // ------------------------------------------------------------ mandar a Gabriel y copia de seguridad (archivo cifrado)
@@ -710,7 +813,7 @@
     }
     const s = saldos(movs);
     const json = JSON.stringify({ formato: "caja-yera", version: VERSION_DATOS, generado: new Date().toISOString(),
-      saldos: { CUP: Math.round(s.CUP * 100) / 100, USD: Math.round(s.USD * 100) / 100 }, movimientos: lista });
+      saldos: { CUP: Math.round(s.CUP * 100) / 100, USD: Math.round(s.USD * 100) / 100 }, movimientos: lista, bitacora: await bitacora() });
     const { gz, datos } = await comprimirTexto(json);
     const sal = crypto.getRandomValues(new Uint8Array(16)), iv = crypto.getRandomValues(new Uint8Array(12));
     const cifrado = new Uint8Array(await crypto.subtle.encrypt({ name: "AES-GCM", iv }, await llave(clave, sal), datos));
@@ -748,6 +851,9 @@
       const b = e.currentTarget; b.disabled = true; b.textContent = "Preparando…";
       try {
         await ponerAjuste("clave", $("#recordar").checked ? c : "");
+        const sa = saldos(await todos());
+        await registrar("enviar", { texto: `Creó el archivo para Gabriel (${(await todos()).length} operaciones)`,
+          saldos: { CUP: Math.round(sa.CUP * 100) / 100, USD: Math.round(sa.USD * 100) / 100 } });
         const { bytes } = await crearArchivo(c);
         const nombre = `caja-yera_${hoy()}.yera`;
         const file = new File([bytes], nombre, { type: "application/octet-stream" });
@@ -770,7 +876,7 @@
   }
 
   // para las pruebas
-  window.__caja = { crearArchivo, leerArchivo, todos, saldos };
+  window.__caja = { crearArchivo, leerArchivo, todos, saldos, bitacora };
 
   // ------------------------------------------------------------ funcionar sin internet
   if ("serviceWorker" in navigator) {
@@ -785,7 +891,7 @@
       document.addEventListener("visibilitychange", () => { if (document.visibilityState === "visible") reg.update().catch(() => {}); });
     }).catch(() => {});
   }
-  pintar();
+  empezarBitacora().catch((e) => console.error(e)).finally(pintar);
 })();
 
 /* sin zoom con dos toques seguidos ni con dos dedos (por si el navegador, p. ej. Brave, ignora la etiqueta del viewport).
